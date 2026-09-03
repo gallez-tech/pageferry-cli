@@ -11,14 +11,19 @@ import (
 //go:embed pageferry/SKILL.md
 var content []byte
 
+// agents maps CLI agent names to install path segments under the project root (local)
+// or the user home directory (global).
+//
+// OpenCode, Codex, and Cursor all discover the portable Agent Skills path
+// `.agents/skills/`; Claude Code only reads `.claude/skills/`.
 var agents = map[string]struct {
 	local  []string
 	global []string
 }{
-	"opencode": {[]string{".opencode", "skills", "pageferry", "SKILL.md"}, []string{".config", "opencode", "skills", "pageferry", "SKILL.md"}},
-	"codex":    {[]string{".codex", "skills", "pageferry", "SKILL.md"}, []string{".codex", "skills", "pageferry", "SKILL.md"}},
+	"opencode": {[]string{".agents", "skills", "pageferry", "SKILL.md"}, []string{".agents", "skills", "pageferry", "SKILL.md"}},
+	"codex":    {[]string{".agents", "skills", "pageferry", "SKILL.md"}, []string{".agents", "skills", "pageferry", "SKILL.md"}},
+	"cursor":   {[]string{".agents", "skills", "pageferry", "SKILL.md"}, []string{".agents", "skills", "pageferry", "SKILL.md"}},
 	"claude":   {[]string{".claude", "skills", "pageferry", "SKILL.md"}, []string{".claude", "skills", "pageferry", "SKILL.md"}},
-	"cursor":   {[]string{".cursor", "skills", "pageferry", "SKILL.md"}, []string{".cursor", "skills", "pageferry", "SKILL.md"}},
 }
 
 func Names() []string { return []string{"opencode", "codex", "claude", "cursor"} }
@@ -34,24 +39,22 @@ func Install(agent string, global, force bool, cwd, home string) ([]string, erro
 	} else {
 		root = projectRoot(cwd)
 	}
+	seen := make(map[string]struct{})
 	var targets []string
 	for _, name := range names {
 		paths, ok := agents[name]
 		if !ok {
 			return nil, fmt.Errorf("unknown agent %q (expected opencode, codex, claude, cursor, or all)", agent)
 		}
-		targetRoot := root
 		parts := paths.local
 		if global {
 			parts = paths.global
-			if name == "codex" {
-				if codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME")); codexHome != "" {
-					targetRoot = codexHome
-					parts = []string{"skills", "pageferry", "SKILL.md"}
-				}
-			}
 		}
-		target := filepath.Join(append([]string{targetRoot}, parts...)...)
+		target := filepath.Join(append([]string{root}, parts...)...)
+		if _, dup := seen[target]; dup {
+			continue
+		}
+		seen[target] = struct{}{}
 		if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("refusing to replace symbolic link %s", target)
 		} else if err == nil && !force {

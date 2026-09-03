@@ -80,6 +80,7 @@ Usage:
   pageferry list [--api-url <url>] [--json]
   pageferry skill install --agent <opencode|codex|claude|cursor|all>
                           [--local|--global] [--force]
+                          (opencode/codex/cursor → .agents/skills; claude → .claude/skills)
   pageferry --version
 
 Environment:

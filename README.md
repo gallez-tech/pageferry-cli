@@ -29,8 +29,9 @@ pageferry skill install --agent cursor --global
 pageferry skill install --agent all
 ```
 
-Supported agents are OpenCode, Codex, Claude Code, and Cursor Agent. Existing skill files are
-preserved unless `--force` is supplied.
+OpenCode, Codex, and Cursor share the portable Agent Skills path (`.agents/skills/` locally,
+`~/.agents/skills/` globally). Claude Code still uses `.claude/skills/`. `--agent all` writes
+both locations once. Existing skill files are preserved unless `--force` is supplied.
 
 ## Release artifacts
 

@@ -8,7 +8,6 @@ import (
 )
 
 func TestInstallLocalAndGlobal(t *testing.T) {
-	t.Setenv("CODEX_HOME", "")
 	cwd, home := filepath.Join(t.TempDir(), "project"), t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cwd, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -17,36 +16,48 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 4 {
-		t.Fatalf("installed %d paths", len(paths))
+	wantLocal := []string{
+		filepath.Join(cwd, ".agents", "skills", "pageferry", "SKILL.md"),
+		filepath.Join(cwd, ".claude", "skills", "pageferry", "SKILL.md"),
 	}
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
+	if len(paths) != len(wantLocal) {
+		t.Fatalf("installed %d paths, want %d: %v", len(paths), len(wantLocal), paths)
+	}
+	for i, want := range wantLocal {
+		if paths[i] != want {
+			t.Fatalf("paths[%d] = %s, want %s", i, paths[i], want)
+		}
+		data, err := os.ReadFile(paths[i])
 		if err != nil || !strings.Contains(string(data), "name: pageferry") {
-			t.Fatalf("invalid skill at %s: %v", path, err)
+			t.Fatalf("invalid skill at %s: %v", paths[i], err)
 		}
 	}
+
+	wantAgents := filepath.Join(home, ".agents", "skills", "pageferry", "SKILL.md")
 	paths, err = Install("opencode", true, false, cwd, home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".config", "opencode", "skills", "pageferry", "SKILL.md")
-	if len(paths) != 1 || paths[0] != want {
-		t.Fatalf("paths = %v, want %s", paths, want)
+	if len(paths) != 1 || paths[0] != wantAgents {
+		t.Fatalf("opencode global paths = %v, want %s", paths, wantAgents)
 	}
-}
+	for _, agent := range []string{"codex", "cursor"} {
+		paths, err = Install(agent, true, true, cwd, home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(paths) != 1 || paths[0] != wantAgents {
+			t.Fatalf("%s global paths = %v, want %s", agent, paths, wantAgents)
+		}
+	}
 
-func TestInstallHonorsCodexHome(t *testing.T) {
-	root := t.TempDir()
-	codexHome := filepath.Join(root, "custom-codex")
-	t.Setenv("CODEX_HOME", codexHome)
-	paths, err := Install("codex", true, false, root, filepath.Join(root, "home"))
+	paths, err = Install("claude", true, false, cwd, home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(codexHome, "skills", "pageferry", "SKILL.md")
-	if len(paths) != 1 || paths[0] != want {
-		t.Fatalf("paths = %v, want %s", paths, want)
+	wantClaude := filepath.Join(home, ".claude", "skills", "pageferry", "SKILL.md")
+	if len(paths) != 1 || paths[0] != wantClaude {
+		t.Fatalf("claude global paths = %v, want %s", paths, wantClaude)
 	}
 }
 
@@ -60,5 +71,24 @@ func TestInstallRefusesOverwriteWithoutForce(t *testing.T) {
 	}
 	if _, err := Install("codex", false, true, root, root); err != nil {
 		t.Fatalf("forced install: %v", err)
+	}
+}
+
+func TestInstallAllDedupesAgentsPath(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Install("cursor", false, false, root, root); err != nil {
+		t.Fatal(err)
+	}
+	// cursor already wrote .agents; --agent all must still install .claude and
+	// refuse the shared .agents path without --force.
+	if _, err := Install("all", false, false, root, root); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected overwrite error for shared .agents path, got %v", err)
+	}
+	paths, err := Install("all", false, true, root, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("forced all installed %d paths, want 2: %v", len(paths), paths)
 	}
 }
