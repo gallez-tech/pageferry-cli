@@ -34,9 +34,12 @@ preserved unless `--force` is supplied.
 
 ## Release artifacts
 
-Tagged releases contain portable archives for Linux, macOS, and Windows on amd64 and arm64.
-Windows releases also contain native MSI installers that install `pageferry.exe` under Program
-Files and add PageFerry to the system `PATH`. Release artifacts are currently unsigned.
+Every push to `main` or `master` builds downloadable workflow artifacts for Linux, macOS, and
+Windows on amd64 and arm64. Windows artifacts include native MSI installers that install
+`pageferry.exe` under Program Files and add PageFerry to the system `PATH`.
+
+Tags matching `v*` publish the same artifacts as a GitHub Release with checksums. Release
+artifacts are currently unsigned.
 
 ## Development
 
