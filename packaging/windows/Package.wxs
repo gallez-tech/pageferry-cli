@@ -20,6 +20,14 @@
             Name="pageferry.exe"
             Source="$(BinaryPath)"
             KeyPath="yes" />
+          <File
+            Id="PageFerryLicense"
+            Name="LICENSE.txt"
+            Source="$(LicensePath)" />
+          <File
+            Id="PageFerryThirdPartyNotices"
+            Name="THIRD_PARTY_NOTICES.md"
+            Source="$(NoticesPath)" />
           <Environment
             Id="PageFerryPath"
             Name="PATH"
