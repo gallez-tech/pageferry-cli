@@ -20,14 +20,6 @@
             Name="pageferry.exe"
             Source="$(BinaryPath)"
             KeyPath="yes" />
-          <File
-            Id="PageFerryLicense"
-            Name="LICENSE.txt"
-            Source="$(LicensePath)" />
-          <File
-            Id="PageFerryThirdPartyNotices"
-            Name="THIRD_PARTY_NOTICES.md"
-            Source="$(NoticesPath)" />
           <Environment
             Id="PageFerryPath"
             Name="PATH"
@@ -37,11 +29,27 @@
             Permanent="no"
             System="yes" />
         </Component>
+        <Component Id="PageFerryLicense" Guid="*">
+          <File
+            Id="PageFerryLicenseFile"
+            Name="LICENSE.txt"
+            Source="$(LicensePath)"
+            KeyPath="yes" />
+        </Component>
+        <Component Id="PageFerryThirdPartyNotices" Guid="*">
+          <File
+            Id="PageFerryThirdPartyNoticesFile"
+            Name="THIRD_PARTY_NOTICES.md"
+            Source="$(NoticesPath)"
+            KeyPath="yes" />
+        </Component>
       </Directory>
     </StandardDirectory>
 
     <Feature Id="Complete" Title="PageFerry CLI" Level="1">
       <ComponentRef Id="PageFerryExecutable" />
+      <ComponentRef Id="PageFerryLicense" />
+      <ComponentRef Id="PageFerryThirdPartyNotices" />
     </Feature>
   </Package>
 </Wix>
