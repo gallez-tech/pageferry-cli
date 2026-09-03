@@ -1,18 +1,26 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+
+	"github.com/gallez-tech/pageferry/cli/internal/command"
 )
 
-const version = "dev"
+var version = "dev"
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Printf("pageferry %s\n", version)
-		return
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
-	fmt.Fprintln(os.Stderr, "pageferry: command not implemented; use --version")
-	os.Exit(2)
+	app, err := command.New(version, os.Stdin, os.Stdout, os.Stderr)
+	if err == nil {
+		err = app.Run(ctx, os.Args[1:])
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pageferry: %v\n", err)
+		os.Exit(1)
+	}
 }

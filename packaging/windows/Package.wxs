@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Id="GallezTech.PageFerry"
+    Name="PageFerry"
+    Manufacturer="gallez-tech"
+    Version="$(Version)"
+    UpgradeCode="F185CBB6-956F-441E-81D3-0DBB851926D3"
+    Scope="perMachine">
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of PageFerry is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="PageFerry">
+        <Component Id="PageFerryExecutable" Guid="*">
+          <File
+            Id="PageFerryExe"
+            Name="pageferry.exe"
+            Source="$(BinaryPath)"
+            KeyPath="yes" />
+          <Environment
+            Id="PageFerryPath"
+            Name="PATH"
+            Value="[INSTALLFOLDER]"
+            Action="set"
+            Part="last"
+            Permanent="no"
+            System="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Complete" Title="PageFerry CLI" Level="1">
+      <ComponentRef Id="PageFerryExecutable" />
+    </Feature>
+  </Package>
+</Wix>
