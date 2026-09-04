@@ -3,7 +3,7 @@
 The native Go command-line client for PageFerry.
 
 ```sh
-go install github.com/gallez-tech/pageferry/cli/cmd/pageferry@latest
+go install github.com/gallez-tech/pageferry-cli/cmd/pageferry@latest
 pageferry auth login
 pageferry upload report.html
 pageferry list
@@ -51,3 +51,15 @@ go vet ./...
 
 Application packages belong under `internal/`; the executable entry point stays in
 `cmd/pageferry/`.
+
+## Origins and acknowledgements
+
+PageFerry grew from the idea demonstrated by
+[Theo Browne (`@t3dotgg`)](https://github.com/t3dotgg) through the
+[Postplan CLI](https://www.npmjs.com/package/postplan). PageFerry develops that idea as an
+independent project with its own Go CLI. It is not affiliated with or endorsed by Postplan
+or Theo Browne. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing details.
+
+## License
+
+PageFerry is released under the [MIT License](LICENSE).

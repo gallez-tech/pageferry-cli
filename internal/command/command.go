@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gallez-tech/pageferry/cli/internal/api"
-	"github.com/gallez-tech/pageferry/cli/internal/policy"
-	"github.com/gallez-tech/pageferry/cli/internal/provenance"
-	"github.com/gallez-tech/pageferry/cli/internal/skill"
-	"github.com/gallez-tech/pageferry/cli/internal/state"
+	"github.com/gallez-tech/pageferry-cli/internal/api"
+	"github.com/gallez-tech/pageferry-cli/internal/policy"
+	"github.com/gallez-tech/pageferry-cli/internal/provenance"
+	"github.com/gallez-tech/pageferry-cli/internal/skill"
+	"github.com/gallez-tech/pageferry-cli/internal/state"
 )
 
 const defaultAPIURL = "https://p.rgf.sh"

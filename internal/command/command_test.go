@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gallez-tech/pageferry/cli/internal/api"
-	"github.com/gallez-tech/pageferry/cli/internal/state"
+	"github.com/gallez-tech/pageferry-cli/internal/api"
+	"github.com/gallez-tech/pageferry-cli/internal/state"
 )
 
 func testApp(t *testing.T, in string) (*App, *bytes.Buffer, *bytes.Buffer) {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/gallez-tech/pageferry/cli/internal/command"
+	"github.com/gallez-tech/pageferry-cli/internal/command"
 )
 
 var version = "dev"
