@@ -59,7 +59,10 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: pageferry-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/pageferry-*
+          path: |
+            dist/pageferry-*.tar.gz
+            dist/pageferry-*.zip
+            dist/pageferry-windows-*.exe
           if-no-files-found: error
 
   windows-installer:
