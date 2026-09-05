@@ -3,6 +3,18 @@
 The native Go command-line client for PageFerry.
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/gallez-tech/pageferry-cli/main/install.sh | sh
+```
+
+On Windows PowerShell, install the checksum-verified MSI with:
+
+```powershell
+irm https://raw.githubusercontent.com/gallez-tech/pageferry-cli/main/install.ps1 | iex
+```
+
+Or install from source:
+
+```sh
 go install github.com/gallez-tech/pageferry-cli/cmd/pageferry@latest
 pageferry auth login
 pageferry upload report.html
@@ -17,6 +29,30 @@ PAGEFERRY_API_KEY=pf_your_key pageferry whoami
 ```
 
 Use `PAGEFERRY_API_URL` or a command's `--api-url` option to target a custom server.
+
+Check whether the installed release is current with:
+
+```sh
+pageferry update check
+```
+
+The install script supports Linux and macOS on amd64 and arm64, verifies the release
+checksum, and installs to `~/.local/bin` by default. Override the destination with
+`PAGEFERRY_INSTALL_DIR` or install a specific release with `PAGEFERRY_VERSION=v1.2.3`.
+The PowerShell installer supports Windows amd64 and arm64, verifies the MSI checksum,
+and requests elevation because the MSI installs PageFerry for the whole machine. It also
+honors `PAGEFERRY_VERSION`.
+
+## Interactive documents
+
+PageFerry accepts complete HTML documents with inline CSS and scripts, HTTPS scripts and
+stylesheets, ES modules, forms, Alpine.js, HTMX, web fonts, and HTTPS browser requests.
+The CLI validates documents before upload and the server repeats validation at the trust
+boundary. Unsafe URL schemes, non-HTTPS external scripts, iframes, embeds, objects,
+applets, inline event-handler attributes, meta refresh, and unsafe CSS are rejected.
+
+Publishing requires a valid key for the server's configured owner (or its operator
+bootstrap key). Draft pages themselves remain publicly readable by URL.
 
 ## Agent skill
 

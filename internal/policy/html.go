@@ -14,8 +14,8 @@ import (
 const MaxHTMLBytes = 512 * 1024
 
 var blockedTags = map[string]bool{
-	"form": true, "iframe": true, "object": true, "embed": true,
-	"applet": true, "base": true, "link": true,
+	"iframe": true, "object": true, "embed": true,
+	"applet": true, "base": true,
 }
 
 var urlAttributes = map[string]bool{
@@ -67,11 +67,11 @@ func ValidateHTML(content []byte) HTMLResult {
 			attrs := attributes(node)
 			if tag == "script" {
 				result.HasInlineScript = true
-				if _, ok := attrs["src"]; ok {
-					result.Errors = append(result.Errors, "External script sources are not allowed.")
+				if src, ok := attrs["src"]; ok && !isHTTPSURL(src) {
+					result.Errors = append(result.Errors, "External script sources must use HTTPS.")
 				}
 				typ := strings.ToLower(strings.TrimSpace(attrs["type"]))
-				if typ != "" && typ != "text/javascript" && typ != "application/javascript" {
+				if typ != "" && typ != "text/javascript" && typ != "application/javascript" && typ != "module" {
 					result.Errors = append(result.Errors, fmt.Sprintf("Unsupported script type %q found.", typ))
 				}
 			}
@@ -179,6 +179,15 @@ func externalHost(value string) string {
 		return ""
 	}
 	return strings.ToLower(parsed.Hostname())
+}
+
+func isHTTPSURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "//") {
+		value = "https:" + value
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
 }
 
 func truncateRunes(value string, limit int) string {

@@ -29,7 +29,7 @@ func TestValidateFilename(t *testing.T) {
 }
 
 func TestValidateHTMLAcceptedSignals(t *testing.T) {
-	result := ValidateHTML([]byte(`<!doctype html><title> Plan </title><style>body { color: red }</style><script>noop()</script><img src="https://B.example/a"><img src="//a.example/a">`))
+	result := ValidateHTML([]byte(`<!doctype html><title> Plan </title><link rel="stylesheet" href="https://cdn.example/app.css"><form><button hx-post="https://api.example/action">Send</button></form><style>body { color: red }</style><script>noop()</script><script type="module" src="https://cdn.example/app.js"></script><img src="https://B.example/a"><img src="//a.example/a">`))
 	if len(result.Errors) != 0 {
 		t.Fatalf("unexpected errors: %v", result.Errors)
 	}
@@ -43,13 +43,13 @@ func TestValidateHTMLAcceptedSignals(t *testing.T) {
 }
 
 func TestValidateHTMLRejectsDangerousContentAndDeduplicates(t *testing.T) {
-	result := ValidateHTML([]byte(`<form><a href="java script:alert(1)" onclick="x()">x</a><div style="behavior : url(x)"></div><style>x{background:url( javascript:alert(1))}</style><script src="x.js"></script><script src="y.js"></script><meta http-equiv="refresh"></form>`))
+	result := ValidateHTML([]byte(`<iframe></iframe><a href="java script:alert(1)" onclick="x()">x</a><div style="behavior : url(x)"></div><style>x{background:url( javascript:alert(1))}</style><script src="x.js"></script><script src="http://example.com/y.js"></script><meta http-equiv="refresh">`))
 	want := []string{
-		"Blocked <form> tag found.",
+		"Blocked <iframe> tag found.",
 		`Blocked inline event handler attribute "onclick" found.`,
 		`Blocked unsafe URL in "href" attribute.`,
 		"Blocked unsafe inline CSS.",
-		"External script sources are not allowed.",
+		"External script sources must use HTTPS.",
 		"Blocked meta refresh tag found.",
 	}
 	for _, expected := range want {
@@ -59,7 +59,7 @@ func TestValidateHTMLRejectsDangerousContentAndDeduplicates(t *testing.T) {
 	}
 	count := 0
 	for _, value := range result.Errors {
-		if value == "External script sources are not allowed." {
+		if value == "External script sources must use HTTPS." {
 			count++
 		}
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/gallez-tech/pageferry-cli/internal/provenance"
 	"github.com/gallez-tech/pageferry-cli/internal/skill"
 	"github.com/gallez-tech/pageferry-cli/internal/state"
+	"github.com/gallez-tech/pageferry-cli/internal/update"
 )
 
 const defaultAPIURL = "https://p.rgf.sh"
@@ -62,6 +63,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.list(ctx, args[1:])
 	case "skill":
 		return a.skill(args[1:])
+	case "update":
+		return a.update(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown command %q; use --help", args[0])
 	}
@@ -81,12 +84,37 @@ Usage:
   pageferry skill install --agent <opencode|codex|claude|cursor|all>
                           [--local|--global] [--force]
                           (opencode/codex/cursor → .agents/skills; claude → .claude/skills)
+  pageferry update check
   pageferry --version
 
 Environment:
   PAGEFERRY_API_URL  Override the saved API origin.
   PAGEFERRY_API_KEY  Override the saved API key.
 `)
+}
+
+func (a *App) update(ctx context.Context, args []string) error {
+	if len(args) != 1 || (args[0] != "check" && !isHelp(args[0])) {
+		return errors.New("usage: pageferry update check")
+	}
+	if isHelp(args[0]) {
+		fmt.Fprintln(a.out, "Usage: pageferry update check")
+		return nil
+	}
+	result, err := update.Check(ctx, a.version, nil)
+	if err != nil {
+		return err
+	}
+	if result.Outdated {
+		fmt.Fprintf(a.out, "Update available: %s → %s\n%s\n", result.Current, result.Latest, result.ReleaseURL)
+		return nil
+	}
+	if a.version == "dev" {
+		fmt.Fprintf(a.out, "Development build; latest release is %s.\n", result.Latest)
+		return nil
+	}
+	fmt.Fprintf(a.out, "PageFerry %s is up to date.\n", result.Current)
+	return nil
 }
 
 func (a *App) auth(ctx context.Context, args []string) error {

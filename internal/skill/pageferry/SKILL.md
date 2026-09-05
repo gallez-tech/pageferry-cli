@@ -17,9 +17,9 @@ Treat the returned HTML as the user's artifact. Report the actual HTTP or networ
 
 ## Publish a document
 
-Create one complete, standalone HTML document. Use semantic HTML, inline CSS, ordinary metadata, HTTPS links, and HTTPS or data-URL images. Keep credentials, private URLs, and local filesystem paths out of the document.
+Create one complete HTML document. It may use inline CSS and scripts, HTTPS stylesheets and scripts, forms, Alpine.js, HTMX, web fonts, ordinary metadata, HTTPS links, and HTTPS or data-URL images. Keep credentials, private URLs, and local filesystem paths out of the document.
 
-PageFerry rejects forms, iframes, embeds, objects, applets, external scripts, event-handler attributes, unsafe URL schemes, meta refresh, and unsafe CSS. Its serving policy blocks all JavaScript execution, so build the artifact without JavaScript.
+PageFerry rejects iframes, embeds, objects, applets, non-HTTPS external scripts, event-handler attributes, unsafe URL schemes, meta refresh, and unsafe CSS. Browser requests and form actions must use HTTPS.
 
 Save the HTML locally, then run:
 
