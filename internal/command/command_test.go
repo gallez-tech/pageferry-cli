@@ -92,6 +92,60 @@ func TestUploadRequiresKeyBeforeReading(t *testing.T) {
 	}
 }
 
+func TestValidateRunsOfflineAndUsesPublicFilename(t *testing.T) {
+	app, out, errOut := testApp(t, "")
+	file := filepath.Join(t.TempDir(), "source.txt")
+	if err := os.WriteFile(file, []byte("<!doctype html><title>Report</title><p>hello</p>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"validate", file, "--name", "report.html"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Valid PageFerry document:") || !strings.Contains(out.String(), "public filename: report.html") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestValidateReportsWarningsAndPolicyErrors(t *testing.T) {
+	app, _, errOut := testApp(t, "")
+	file := filepath.Join(t.TempDir(), "unsafe.html")
+	if err := os.WriteFile(file, []byte(`<iframe src="https://example.com"></iframe>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := app.Run(context.Background(), []string{"validate", file})
+	if err == nil || !strings.Contains(err.Error(), "Blocked <iframe> tag found.") {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(errOut.String(), "No <title> found") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}
+
+func TestValidateRejectsInvalidPublicFilename(t *testing.T) {
+	app, _, _ := testApp(t, "")
+	file := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(file, []byte("<!doctype html><title>Report</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := app.Run(context.Background(), []string{"validate", file})
+	if err == nil || !strings.Contains(err.Error(), "Filename must end with .html or .htm.") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestValidateHelpIsLocalAndDocumentsName(t *testing.T) {
+	app, out, _ := testApp(t, "")
+	if err := app.Run(context.Background(), []string{"validate", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "pageferry validate <file> [--name <filename>]") {
+		t.Fatalf("help = %q", got)
+	}
+}
+
 func TestLoginDoesNotReplaceCredentialsOnEmptyInput(t *testing.T) {
 	app, _, _ := testApp(t, "")
 	if err := app.store.SaveCredentials(state.Credentials{APIKey: "existing"}); err != nil {

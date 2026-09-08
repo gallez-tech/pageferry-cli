@@ -28,8 +28,14 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 			t.Fatalf("paths[%d] = %s, want %s", i, paths[i], want)
 		}
 		data, err := os.ReadFile(paths[i])
-		if err != nil || !strings.Contains(string(data), "name: pageferry") {
+		if err != nil {
 			t.Fatalf("invalid skill at %s: %v", paths[i], err)
+		}
+		content := string(data)
+		for _, required := range []string{"name: pageferry", "Alpine.js", "HTMX", "Published documents are public", "Pin dependency versions", "Subresource Integrity", "pageferry validate <file-path>", "pageferry upload <file-path>"} {
+			if !strings.Contains(content, required) {
+				t.Errorf("skill at %s is missing %q", paths[i], required)
+			}
 		}
 	}
 
