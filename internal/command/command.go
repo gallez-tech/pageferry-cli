@@ -59,6 +59,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.whoami(ctx, args[1:])
 	case "upload":
 		return a.upload(ctx, args[1:])
+	case "validate":
+		return a.validate(args[1:])
 	case "list":
 		return a.list(ctx, args[1:])
 	case "skill":
@@ -80,6 +82,7 @@ Usage:
   pageferry upload <file> [--draft <id>] [--new] [--name <filename>]
                    [--description <text>] [--temporary <duration>]
                    [--workers-dev] [--api-url <url>]
+  pageferry validate <file> [--name <filename>]
   pageferry list [--api-url <url>] [--json]
   pageferry skill install --agent <opencode|codex|claude|cursor|all>
                           [--local|--global] [--force]
@@ -91,6 +94,52 @@ Environment:
   PAGEFERRY_API_URL  Override the saved API origin.
   PAGEFERRY_API_KEY  Override the saved API key.
 `)
+}
+
+func (a *App) validate(args []string) error {
+	if len(args) == 1 && isHelp(args[0]) {
+		fmt.Fprintln(a.out, "Usage: pageferry validate <file> [--name <filename>]")
+		return nil
+	}
+	options, positional, err := parseOptions(args, map[string]bool{"name": true})
+	if err != nil {
+		return err
+	}
+	if len(positional) != 1 {
+		return errors.New("usage: pageferry validate <file> [--name <filename>]")
+	}
+	absolute, err := filepath.Abs(positional[0])
+	if err != nil {
+		return fmt.Errorf("resolve file: %w", err)
+	}
+	info, err := os.Stat(absolute)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", absolute, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", absolute)
+	}
+	content, err := os.ReadFile(absolute)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", absolute, err)
+	}
+	validation := policy.ValidateHTML(content)
+	for _, warning := range validation.Warnings {
+		fmt.Fprintf(a.errOut, "warning: %s\n", warning)
+	}
+	if len(validation.Errors) > 0 {
+		return fmt.Errorf("HTML validation failed:\n  - %s", strings.Join(validation.Errors, "\n  - "))
+	}
+	filename := filepath.Base(absolute)
+	if suppliedName, supplied := options["name"]; supplied {
+		filename = suppliedName
+	}
+	filename, filenameErrors := policy.ValidateFilename(filename)
+	if err := policy.FilenameError(filenameErrors); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "Valid PageFerry document: %s (public filename: %s)\n", absolute, filename)
+	return nil
 }
 
 func (a *App) update(ctx context.Context, args []string) error {

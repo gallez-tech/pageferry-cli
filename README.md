@@ -17,6 +17,7 @@ Or install from source:
 ```sh
 go install github.com/gallez-tech/pageferry-cli/cmd/pageferry@latest
 pageferry auth login
+pageferry validate report.html
 pageferry upload report.html
 pageferry list
 ```
@@ -51,6 +52,13 @@ The CLI validates documents before upload and the server repeats validation at t
 boundary. Unsafe URL schemes, non-HTTPS external scripts, iframes, embeds, objects,
 applets, inline event-handler attributes, meta refresh, and unsafe CSS are rejected.
 
+Validate a document locally without an API key or network access:
+
+```sh
+pageferry validate report.html
+pageferry validate generated-output.tmp --name report.html
+```
+
 Publishing requires a valid key for the server's configured owner (or its operator
 bootstrap key). Draft pages themselves remain publicly readable by URL.
 
@@ -64,6 +72,9 @@ pageferry skill install --agent codex
 pageferry skill install --agent cursor --global
 pageferry skill install --agent all
 ```
+
+Re-run the applicable command with `--force` to refresh an existing installed copy after
+updating PageFerry.
 
 OpenCode, Codex, and Cursor share the portable Agent Skills path (`.agents/skills/` locally,
 `~/.agents/skills/` globally). Claude Code still uses `.claude/skills/`. `--agent all` writes
