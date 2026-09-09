@@ -60,7 +60,18 @@ pageferry validate generated-output.tmp --name report.html
 ```
 
 Publishing requires a valid key for the server's configured owner (or its operator
-bootstrap key). Draft pages themselves remain publicly readable by URL.
+bootstrap key). Drafts are public by default. Protect one and store backend-only values:
+
+```sh
+pageferry upload app.html --password 'a long password' \
+  --env WEBHOOK_URL=https://example.com/hook \
+  --secret API_KEY=pf_private
+pageferry upload app.html --email reader@example.com
+```
+
+These options are repeatable. Password and email access are mutually exclusive. Email
+access is accepted, but magic-link delivery awaits the future SMTP/API integration. Use
+`--public` on a later upload to remove access protection.
 
 ## Agent skill
 

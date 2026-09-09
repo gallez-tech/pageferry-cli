@@ -28,13 +28,22 @@ type Identity struct {
 }
 
 type UploadRequest struct {
-	HTML             string         `json:"html"`
-	Filename         string         `json:"filename"`
-	DraftID          string         `json:"draftId,omitempty"`
-	Description      *string        `json:"description,omitempty"`
-	HostingMode      string         `json:"hostingMode,omitempty"`
-	ExpiresInSeconds *int64         `json:"expiresInSeconds,omitempty"`
-	Metadata         map[string]any `json:"metadata,omitempty"`
+	HTML             string            `json:"html"`
+	Filename         string            `json:"filename"`
+	DraftID          string            `json:"draftId,omitempty"`
+	Description      *string           `json:"description,omitempty"`
+	HostingMode      string            `json:"hostingMode,omitempty"`
+	ExpiresInSeconds *int64            `json:"expiresInSeconds,omitempty"`
+	Metadata         map[string]any    `json:"metadata,omitempty"`
+	Access           *UploadAccess     `json:"access,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
+	Secrets          map[string]string `json:"secrets,omitempty"`
+}
+
+type UploadAccess struct {
+	Mode     string   `json:"mode,omitempty"`
+	Password string   `json:"password,omitempty"`
+	Emails   []string `json:"emails,omitempty"`
 }
 
 type UploadResponse struct {
@@ -49,6 +58,7 @@ type UploadResponse struct {
 	WorkersDevURL *string  `json:"workersDevUrl"`
 	ExpiresAt     *string  `json:"expiresAt"`
 	Warnings      []string `json:"warnings"`
+	AccessMode    string   `json:"accessMode"`
 }
 
 type Draft struct {
@@ -69,6 +79,7 @@ type Draft struct {
 	Expired             bool    `json:"expired"`
 	PublicURL           string  `json:"publicUrl"`
 	RawURL              string  `json:"rawUrl"`
+	AccessMode          string  `json:"accessMode"`
 }
 
 type APIError struct {

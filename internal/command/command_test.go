@@ -92,6 +92,30 @@ func TestUploadRequiresKeyBeforeReading(t *testing.T) {
 	}
 }
 
+func TestUploadSendsPrivateAccessAndBackendVariables(t *testing.T) {
+	var uploaded api.UploadRequest
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&uploaded); err != nil {
+			t.Fatal(err)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{"draftId": "draft123", "versionNumber": 1, "publicUrl": "https://p-draft123.rgf.sh/page.html", "rawUrl": "https://p-draft123.rgf.sh/raw", "versionUrl": "https://p-draft123.rgf.sh/v/1/page.html", "hostingMode": "domain", "accessMode": "password", "warnings": []string{}})
+	}))
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	file := filepath.Join(t.TempDir(), "page.html")
+	_ = os.WriteFile(file, []byte("<!doctype html><title>Private</title>"), 0o644)
+	err := app.Run(context.Background(), []string{"upload", file, "--password", "long-password", "--env", "WEBHOOK_URL=https://example.com/hook", "--secret", "API_KEY=hidden", "--env", "MODE=test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploaded.Access == nil || uploaded.Access.Password != "long-password" || uploaded.Env["MODE"] != "test" || uploaded.Secrets["API_KEY"] != "hidden" {
+		t.Fatalf("upload = %#v", uploaded)
+	}
+}
+
 func TestValidateRunsOfflineAndUsesPublicFilename(t *testing.T) {
 	app, out, errOut := testApp(t, "")
 	file := filepath.Join(t.TempDir(), "source.txt")

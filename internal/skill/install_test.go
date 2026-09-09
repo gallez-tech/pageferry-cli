@@ -32,7 +32,7 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 			t.Fatalf("invalid skill at %s: %v", paths[i], err)
 		}
 		content := string(data)
-		for _, required := range []string{"name: pageferry", "Alpine.js", "HTMX", "Published documents are public", "Pin dependency versions", "Subresource Integrity", "pageferry validate <file-path>", "pageferry upload <file-path>"} {
+		for _, required := range []string{"name: pageferry", "Alpine.js", "HTMX", "public unless uploaded", "--secret NAME=value", "Pin dependency versions", "Subresource Integrity", "pageferry validate <file-path>", "pageferry upload <file-path>"} {
 			if !strings.Contains(content, required) {
 				t.Errorf("skill at %s is missing %q", paths[i], required)
 			}

@@ -81,6 +81,8 @@ Usage:
   pageferry whoami [--api-url <url>]
   pageferry upload <file> [--draft <id>] [--new] [--name <filename>]
                    [--description <text>] [--temporary <duration>]
+                   [--public | --password <password> | --email <address>]
+                   [--env <NAME=value>] [--secret <NAME=value>]
                    [--workers-dev] [--api-url <url>]
   pageferry validate <file> [--name <filename>]
   pageferry list [--api-url <url>] [--json]
@@ -266,10 +268,10 @@ func (a *App) whoami(ctx context.Context, args []string) error {
 
 func (a *App) upload(ctx context.Context, args []string) error {
 	if len(args) == 1 && isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry upload <file> [--draft <id>] [--new] [--name <filename>] [--description <text>] [--temporary <duration>] [--workers-dev] [--api-url <url>]")
+		fmt.Fprintln(a.out, "Usage: pageferry upload <file> [--draft <id>] [--new] [--name <filename>] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
 		return nil
 	}
-	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "description": true, "temporary": true, "workers-dev": false}
+	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false}
 	options, positional, err := parseOptions(args, spec)
 	if err != nil {
 		return err
@@ -282,6 +284,10 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	}
 	if _, workersDev := options["workers-dev"]; workersDev && options["temporary"] == "" {
 		return errors.New("--workers-dev requires --temporary")
+	}
+	_, makePublic := options["public"]
+	if boolCount(makePublic, options["password"] != "", options["email"] != "") > 1 {
+		return errors.New("--public, --password, and --email are mutually exclusive")
 	}
 	absolute, err := filepath.Abs(positional[0])
 	if err != nil {
@@ -320,6 +326,23 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		draftID = drafts[absolute].DraftID
 	}
 	request := api.UploadRequest{HTML: string(content), Filename: filename, DraftID: draftID, HostingMode: "domain"}
+	if password := options["password"]; password != "" {
+		request.Access = &api.UploadAccess{Mode: "password", Password: password}
+	}
+	if raw := options["email"]; raw != "" {
+		request.Access = &api.UploadAccess{Mode: "email", Emails: optionValues(raw)}
+	}
+	if makePublic {
+		request.Access = &api.UploadAccess{Mode: "public"}
+	}
+	request.Env, err = parseAssignments(optionValues(options["env"]))
+	if err != nil {
+		return fmt.Errorf("--env: %w", err)
+	}
+	request.Secrets, err = parseAssignments(optionValues(options["secret"]))
+	if err != nil {
+		return fmt.Errorf("--secret: %w", err)
+	}
 	if description, supplied := options["description"]; supplied {
 		request.Description = &description
 	}
@@ -561,16 +584,64 @@ func parseOptions(args []string, spec map[string]bool) (map[string]string, []str
 			continue
 		}
 		if len(nameValue) == 2 {
-			options[name] = nameValue[1]
+			options[name] = appendOption(options[name], nameValue[1])
 			continue
 		}
 		index++
 		if index >= len(args) || strings.HasPrefix(args[index], "--") {
 			return nil, nil, fmt.Errorf("option --%s requires a value", name)
 		}
-		options[name] = args[index]
+		options[name] = appendOption(options[name], args[index])
 	}
 	return options, positional, nil
+}
+
+func appendOption(existing, value string) string {
+	if existing == "" {
+		return value
+	}
+	return existing + "\x00" + value
+}
+
+func optionValues(value string) []string {
+	if value == "" {
+		return nil
+	}
+	return strings.Split(value, "\x00")
+}
+
+func parseAssignments(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]string, len(values))
+	for _, assignment := range values {
+		parts := strings.SplitN(assignment, "=", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return nil, fmt.Errorf("expected NAME=value")
+		}
+		name := parts[0]
+		if name[0] < 'A' || name[0] > 'Z' {
+			return nil, fmt.Errorf("invalid variable name %q", name)
+		}
+		for _, char := range name {
+			if !(char >= 'A' && char <= 'Z') && !(char >= '0' && char <= '9') && char != '_' {
+				return nil, fmt.Errorf("invalid variable name %q", name)
+			}
+		}
+		result[name] = parts[1]
+	}
+	return result, nil
+}
+
+func boolCount(values ...bool) int {
+	count := 0
+	for _, value := range values {
+		if value {
+			count++
+		}
+	}
+	return count
 }
 
 func relativeTime(raw string, now time.Time) string {

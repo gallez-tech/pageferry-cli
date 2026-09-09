@@ -19,7 +19,7 @@ Treat the returned HTML as the user's artifact. Report the actual HTTP or networ
 
 Create one complete HTML document. It may use inline CSS and scripts, HTTPS stylesheets and scripts, forms, Alpine.js, HTMX, web fonts, ordinary metadata, HTTPS links, and HTTPS or data-URL images. Keep credentials, private URLs, and local filesystem paths out of the document.
 
-Published documents are public. Include no secrets, credentials, private URLs, personal data, or other confidential material. Pin dependency versions in CDN URLs and add Subresource Integrity (`integrity`) metadata when the CDN provides hashes; choose maintained versions appropriate to the document instead of relying on a floating latest release.
+Documents are public unless uploaded with `--password` or `--email`. Never embed secrets or credentials in HTML; pass backend-only values with repeatable `--secret NAME=value` and target URLs/configuration with `--env NAME=value`. Pin dependency versions in CDN URLs and add Subresource Integrity (`integrity`) metadata when the CDN provides hashes; choose maintained versions appropriate to the document instead of relying on a floating latest release.
 
 PageFerry rejects iframes, embeds, objects, applets, non-HTTPS external scripts, event-handler attributes, unsafe URL schemes, meta refresh, and unsafe CSS. Browser requests and form actions must use HTTPS.
 
