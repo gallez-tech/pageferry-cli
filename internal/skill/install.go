@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 	"os"
@@ -10,6 +11,19 @@ import (
 
 //go:embed pageferry/SKILL.md
 var content []byte
+
+type Status string
+
+const (
+	Installed Status = "installed"
+	Updated   Status = "updated"
+	Current   Status = "current"
+)
+
+type Result struct {
+	Path   string
+	Status Status
+}
 
 // agents maps CLI agent names to install path segments under the project root (local)
 // or the user home directory (global).
@@ -28,7 +42,7 @@ var agents = map[string]struct {
 
 func Names() []string { return []string{"opencode", "codex", "claude", "cursor"} }
 
-func Install(agent string, global, force bool, cwd, home string) ([]string, error) {
+func Install(agent string, global, force bool, cwd, home string) ([]Result, error) {
 	names := []string{strings.ToLower(agent)}
 	if names[0] == "all" {
 		names = Names()
@@ -40,7 +54,7 @@ func Install(agent string, global, force bool, cwd, home string) ([]string, erro
 		root = projectRoot(cwd)
 	}
 	seen := make(map[string]struct{})
-	var targets []string
+	var results []Result
 	for _, name := range names {
 		paths, ok := agents[name]
 		if !ok {
@@ -55,29 +69,41 @@ func Install(agent string, global, force bool, cwd, home string) ([]string, erro
 			continue
 		}
 		seen[target] = struct{}{}
+		status := Installed
 		if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("refusing to replace symbolic link %s", target)
-		} else if err == nil && !force {
-			return nil, fmt.Errorf("%s already exists; use --force to replace it", target)
+		} else if err == nil {
+			existing, readErr := os.ReadFile(target)
+			if readErr != nil {
+				return nil, fmt.Errorf("read existing skill %s: %w", target, readErr)
+			}
+			if bytes.Equal(existing, content) {
+				status = Current
+			} else if !force {
+				return nil, fmt.Errorf("installed PageFerry skill is outdated: %s; use --force to update it", target)
+			} else {
+				status = Updated
+			}
 		} else if err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		targets = append(targets, target)
+		results = append(results, Result{Path: target, Status: status})
 	}
-	var installed []string
-	for _, target := range targets {
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	for _, result := range results {
+		if result.Status == Current {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(result.Path), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(target, content, 0o644); err != nil {
+		if err := os.WriteFile(result.Path, content, 0o644); err != nil {
 			return nil, err
 		}
-		if err := os.Chmod(target, 0o644); err != nil {
+		if err := os.Chmod(result.Path, 0o644); err != nil {
 			return nil, err
 		}
-		installed = append(installed, target)
 	}
-	return installed, nil
+	return results, nil
 }
 
 func projectRoot(start string) string {

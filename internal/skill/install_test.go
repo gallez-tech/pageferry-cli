@@ -24,17 +24,17 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 		t.Fatalf("installed %d paths, want %d: %v", len(paths), len(wantLocal), paths)
 	}
 	for i, want := range wantLocal {
-		if paths[i] != want {
-			t.Fatalf("paths[%d] = %s, want %s", i, paths[i], want)
+		if paths[i].Path != want || paths[i].Status != Installed {
+			t.Fatalf("results[%d] = %#v, want installed %s", i, paths[i], want)
 		}
-		data, err := os.ReadFile(paths[i])
+		data, err := os.ReadFile(paths[i].Path)
 		if err != nil {
-			t.Fatalf("invalid skill at %s: %v", paths[i], err)
+			t.Fatalf("invalid skill at %s: %v", paths[i].Path, err)
 		}
 		content := string(data)
 		for _, required := range []string{"name: pageferry", "Alpine.js", "HTMX", "public unless uploaded", "--secret NAME=value", "Pin dependency versions", "Subresource Integrity", "pageferry validate <file-path>", "pageferry upload <file-path>"} {
 			if !strings.Contains(content, required) {
-				t.Errorf("skill at %s is missing %q", paths[i], required)
+				t.Errorf("skill at %s is missing %q", paths[i].Path, required)
 			}
 		}
 	}
@@ -44,7 +44,7 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(paths) != 1 || paths[0] != wantAgents {
+	if len(paths) != 1 || paths[0].Path != wantAgents {
 		t.Fatalf("opencode global paths = %v, want %s", paths, wantAgents)
 	}
 	for _, agent := range []string{"codex", "cursor"} {
@@ -52,7 +52,7 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(paths) != 1 || paths[0] != wantAgents {
+		if len(paths) != 1 || paths[0].Path != wantAgents {
 			t.Fatalf("%s global paths = %v, want %s", agent, paths, wantAgents)
 		}
 	}
@@ -62,7 +62,7 @@ func TestInstallLocalAndGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantClaude := filepath.Join(home, ".claude", "skills", "pageferry", "SKILL.md")
-	if len(paths) != 1 || paths[0] != wantClaude {
+	if len(paths) != 1 || paths[0].Path != wantClaude {
 		t.Fatalf("claude global paths = %v, want %s", paths, wantClaude)
 	}
 }
@@ -72,11 +72,22 @@ func TestInstallRefusesOverwriteWithoutForce(t *testing.T) {
 	if _, err := Install("codex", false, false, root, root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Install("codex", false, false, root, root); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("expected overwrite error, got %v", err)
+	results, err := Install("codex", false, false, root, root)
+	if err != nil || len(results) != 1 || results[0].Status != Current {
+		t.Fatalf("current install = %#v, %v", results, err)
 	}
-	if _, err := Install("codex", false, true, root, root); err != nil {
+	if err := os.WriteFile(results[0].Path, []byte("old skill"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install("codex", false, false, root, root); err == nil || !strings.Contains(err.Error(), "outdated") || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected outdated skill error, got %v", err)
+	}
+	results, err = Install("codex", false, true, root, root)
+	if err != nil {
 		t.Fatalf("forced install: %v", err)
+	}
+	if len(results) != 1 || results[0].Status != Updated {
+		t.Fatalf("forced install = %#v, want updated", results)
 	}
 }
 
@@ -85,10 +96,14 @@ func TestInstallAllDedupesAgentsPath(t *testing.T) {
 	if _, err := Install("cursor", false, false, root, root); err != nil {
 		t.Fatal(err)
 	}
-	// cursor already wrote .agents; --agent all must still install .claude and
-	// refuse the shared .agents path without --force.
-	if _, err := Install("all", false, false, root, root); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Fatalf("expected overwrite error for shared .agents path, got %v", err)
+	// cursor already wrote the current .agents skill; --agent all recognizes
+	// that copy and installs only the missing Claude skill.
+	results, err := Install("all", false, false, root, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[0].Status != Current || results[1].Status != Installed {
+		t.Fatalf("all install results = %#v", results)
 	}
 	paths, err := Install("all", false, true, root, root)
 	if err != nil {

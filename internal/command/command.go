@@ -495,12 +495,19 @@ func (a *App) skill(args []string) error {
 		return err
 	}
 	_, force := options["force"]
-	paths, err := skill.Install(options["agent"], global, force, cwd, home)
+	results, err := skill.Install(options["agent"], global, force, cwd, home)
 	if err != nil {
 		return err
 	}
-	for _, path := range paths {
-		fmt.Fprintf(a.out, "Installed PageFerry skill: %s\n", path)
+	for _, result := range results {
+		switch result.Status {
+		case skill.Current:
+			fmt.Fprintf(a.out, "PageFerry skill is up to date: %s\n", result.Path)
+		case skill.Updated:
+			fmt.Fprintf(a.out, "Updated PageFerry skill: %s\n", result.Path)
+		default:
+			fmt.Fprintf(a.out, "Installed PageFerry skill: %s\n", result.Path)
+		}
 	}
 	return nil
 }

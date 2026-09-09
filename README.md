@@ -84,12 +84,13 @@ pageferry skill install --agent cursor --global
 pageferry skill install --agent all
 ```
 
-Re-run the applicable command with `--force` to refresh an existing installed copy after
-updating PageFerry.
+Re-running the command reports whether the installed skill is already current. If it differs
+from the skill bundled with the CLI, the command reports it as outdated; add `--force` to
+replace it with the bundled version.
 
 OpenCode, Codex, and Cursor share the portable Agent Skills path (`.agents/skills/` locally,
 `~/.agents/skills/` globally). Claude Code still uses `.claude/skills/`. `--agent all` writes
-both locations once. Existing skill files are preserved unless `--force` is supplied.
+both locations once. Differing skill files are preserved unless `--force` is supplied.
 
 ## Release artifacts
 
