@@ -12,6 +12,9 @@ On Windows PowerShell, install the checksum-verified MSI with:
 irm https://raw.githubusercontent.com/gallez-tech/pageferry-cli/main/install.ps1 | iex
 ```
 
+Re-running either installer replaces the installed executable, including when reinstalling
+the same PageFerry version.
+
 Or install from source:
 
 ```sh

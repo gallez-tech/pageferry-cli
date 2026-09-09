@@ -51,7 +51,7 @@ try {
 
     Write-Host "Installing PageFerry $($Version.TrimStart('v'))..."
     $Process = Start-Process -FilePath "msiexec.exe" `
-        -ArgumentList "/i `"$MsiPath`"" `
+        -ArgumentList "/i `"$MsiPath`" REINSTALL=ALL REINSTALLMODE=amus" `
         -Verb RunAs `
         -Wait `
         -PassThru
