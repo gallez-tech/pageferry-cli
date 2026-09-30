@@ -71,3 +71,13 @@ pageferry validate <project-dir>         # checks dist/ offline
 ```
 
 Given a project directory without `index.html`, PageFerry uses its `dist/` folder. Hidden files are skipped. Every HTML file in the bundle follows the document policy above, except that scripts may use same-origin paths such as `/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files.
+
+Slidev-specific checks when `index.html` includes `meta property="slidev:version"`:
+
+- Keep the default `/` base (`npm run build` / `slidev build` without `--base`).
+- With `download: true` in `slides.md`, run `slidev build --download` and ensure `playwright-chromium` is installed so `slidev-exported.pdf` (or `exportFilename`) is in `dist/`.
+- PageFerry relays presenter state across devices for hosted Slidev builds; `drawings.persist: true` stays browser-local and is **not** synced between devices.
+- Slidev `remote` passwords are not enforced by PageFerry — use `pageferry upload --password` or `--email` for access control.
+- Screen mirror and recording use `getDisplayMedia`; they need HTTPS on the public URL and a user gesture.
+- YouTube, Tweet, and `layout: iframe` embeds work on PageFerry (`frame-src` allows HTTPS iframes).
+- The CLI warns when `index.html` references bundle files that are missing (for example Monaco `*.worker` assets) or when the bundle is close to the 50 MiB limit.

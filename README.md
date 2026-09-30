@@ -116,9 +116,22 @@ pageferry upload . --build
 pageferry validate .
 ```
 
-Hidden files and symbolic links are skipped. HTML files in the bundle follow the same policy
-as single documents, except that scripts may load same-origin paths such as
-`/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files. Access options,
+Hidden files and symbolic links are skipped (including dotfiles and symlinks; `404.html`,
+`_redirects`, and hashed assets under `assets/` are kept). HTML files in the bundle follow
+the same policy as single documents, except that scripts may load same-origin paths such as
+`/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files.
+
+For [Slidev](https://sli.dev) builds, `pageferry validate` and `pageferry upload` detect
+`slidev build` output (`meta property="slidev:version"`), check that every root-absolute script
+and stylesheet path exists in the bundle (Monaco workers, PDF export, and so on), and emit
+warnings only when something is actionable: rebuild without `slidev build --base`, include the
+exported PDF when `download: true` is set in `slides.md` (`slidev build --download` with
+`playwright-chromium`), trim a bundle near the 50 MiB limit, note that `drawings.persist: true`
+is not synchronized between devices, or remind you that Slidev's `remote` password is not
+enforced by PageFerry (use `--password` or `--email` instead). On PageFerry, published Slidev
+decks synchronize presenter navigation across devices over HTTPS; YouTube, Tweet, and iframe
+layouts work on the public URL. Screen mirror and recording still require a secure context
+(HTTPS) and a browser permission prompt. Access options,
 `--temporary`, `--description`, and draft updates work as for documents. Version URLs
 (`/v/<n>/`) serve that version's files, but assets referenced with absolute paths load from
 the current version.
