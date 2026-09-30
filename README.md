@@ -76,6 +76,29 @@ These options are repeatable. Password and email access are mutually exclusive. 
 access is accepted, but magic-link delivery awaits the future SMTP/API integration. Use
 `--public` on a later upload to remove access protection.
 
+## Static sites and Slidev decks
+
+`pageferry upload` also accepts a build output directory with `index.html` at its root. Every
+file is published and served from the draft's own origin; extension-less routes (`/3`,
+`/presenter/3`, `/overview`) fall back to `index.html`, so single-page apps built with
+history routing work unchanged. This covers [Slidev](https://sli.dev/guide/) decks built with
+`npm run build` (keep the default `/` base):
+
+```sh
+cd my-talk
+npm run build && pageferry upload dist
+# or let PageFerry run the build and pick up dist/ itself:
+pageferry upload . --build
+pageferry validate .
+```
+
+Hidden files and symbolic links are skipped. HTML files in the bundle follow the same policy
+as single documents, except that scripts may load same-origin paths such as
+`/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files. Access options,
+`--temporary`, `--description`, and draft updates work as for documents. Version URLs
+(`/v/<n>/`) serve that version's files, but assets referenced with absolute paths load from
+the current version.
+
 ## Agent skill
 
 Install the bundled PageFerry skill for one supported coding agent. Project-local installation

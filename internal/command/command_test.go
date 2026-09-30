@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -165,7 +166,7 @@ func TestValidateHelpIsLocalAndDocumentsName(t *testing.T) {
 	if err := app.Run(context.Background(), []string{"validate", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); !strings.Contains(got, "pageferry validate <file> [--name <filename>]") {
+	if got := out.String(); !strings.Contains(got, "pageferry validate <file|directory> [--name <filename>]") {
 		t.Fatalf("help = %q", got)
 	}
 }
@@ -191,5 +192,137 @@ func TestParseDurationBounds(t *testing.T) {
 		if _, err := parseDuration(invalid); err == nil {
 			t.Errorf("%s was accepted", invalid)
 		}
+	}
+}
+
+const slidevIndex = `<!doctype html><html><head><title>Deck</title>
+<script type="module" crossorigin src="/assets/index-DkT9yQ3a.js"></script>
+<link rel="stylesheet" href="/assets/index-B8f2Kq1L.css"></head><body><div id="app"></div></body></html>`
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		target := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestUploadDirectoryBuildsAndSendsSiteBundle(t *testing.T) {
+	var metadata api.UploadRequest
+	received := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if !strings.HasPrefix(request.Header.Get("Content-Type"), "multipart/form-data") {
+			t.Errorf("content type = %q", request.Header.Get("Content-Type"))
+		}
+		reader, err := request.MultipartReader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parts []string
+		for {
+			part, err := reader.NextPart()
+			if err != nil {
+				break
+			}
+			data, _ := io.ReadAll(part)
+			if part.FormName() == "metadata" {
+				_ = json.Unmarshal(data, &metadata)
+			} else {
+				parts = append(parts, string(data))
+			}
+		}
+		for index, path := range metadata.Files {
+			received[path] = parts[index]
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{"draftId": "site12345678", "versionNumber": 1, "publicUrl": "https://p-site12345678.rgf.sh/", "versionUrl": "https://p-site12345678.rgf.sh/v/1/", "hostingMode": "domain", "contentKind": "site", "fileCount": len(parts), "warnings": []string{}})
+	}))
+	defer server.Close()
+	app, out, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	project := t.TempDir()
+	writeFiles(t, project, map[string]string{"slides.md": "# Deck", "package.json": "{}"})
+	var builtIn string
+	app.build = func(_ context.Context, dir string, _ io.Writer) error {
+		builtIn = dir
+		writeFiles(t, dir, map[string]string{
+			"dist/index.html":                slidevIndex,
+			"dist/assets/index-DkT9yQ3a.js":  "console.log(1)",
+			"dist/assets/index-B8f2Kq1L.css": "body{}",
+			"dist/.DS_Store":                 "junk",
+		})
+		return nil
+	}
+	if err := app.Run(context.Background(), []string{"upload", project, "--build"}); err != nil {
+		t.Fatal(err)
+	}
+	if builtIn != project {
+		t.Fatalf("build ran in %q", builtIn)
+	}
+	if metadata.HTML != "" || metadata.Filename != "" || len(metadata.Files) != 3 {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+	if received["index.html"] != slidevIndex || received["assets/index-DkT9yQ3a.js"] != "console.log(1)" {
+		t.Fatalf("received = %#v", received)
+	}
+	if _, ok := received[".DS_Store"]; ok {
+		t.Fatal("hidden file was uploaded")
+	}
+	if !strings.Contains(out.String(), "Public URL: https://p-site12345678.rgf.sh/") || !strings.Contains(out.String(), "Files: 3") {
+		t.Fatalf("output = %q", out.String())
+	}
+	if app.store.LoadDrafts()[project].DraftID != "site12345678" {
+		t.Fatal("draft mapping was not saved for the project directory")
+	}
+}
+
+func TestValidateDirectoryRejectsUnsafeSites(t *testing.T) {
+	app, out, _ := testApp(t, "")
+	good := t.TempDir()
+	writeFiles(t, good, map[string]string{"index.html": slidevIndex, "assets/index-DkT9yQ3a.js": "1"})
+	if err := app.Run(context.Background(), []string{"validate", good}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Valid PageFerry site") {
+		t.Fatalf("output = %q", out.String())
+	}
+
+	missing := t.TempDir()
+	writeFiles(t, missing, map[string]string{"slides.md": "# Deck"})
+	if err := app.Run(context.Background(), []string{"validate", missing}); err == nil || !strings.Contains(err.Error(), "npm run build") {
+		t.Fatalf("error = %v", err)
+	}
+
+	unsafe := t.TempDir()
+	writeFiles(t, unsafe, map[string]string{"index.html": slidevIndex, "embed.html": "<title>x</title><iframe></iframe>"})
+	if err := app.Run(context.Background(), []string{"validate", unsafe}); err == nil || !strings.Contains(err.Error(), "embed.html: Blocked <iframe> tag found.") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestUploadDirectoryReportsServerErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		_, _ = io.Copy(io.Discard, request.Body)
+		response.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = response.Write([]byte(`{"ok":false,"errors":["Site bundle must contain index.html at its root."]}`))
+	}))
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	site := t.TempDir()
+	writeFiles(t, site, map[string]string{"index.html": slidevIndex})
+	err := app.Run(context.Background(), []string{"upload", site})
+	if err == nil || !strings.Contains(err.Error(), "index.html at its root") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(app.store.LoadDrafts()) != 0 {
+		t.Fatal("failed upload saved a draft mapping")
 	}
 }

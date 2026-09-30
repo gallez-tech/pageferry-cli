@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ type App struct {
 	store   *state.Store
 	now     func() time.Time
 	getenv  func(string) string
+	build   func(ctx context.Context, dir string, output io.Writer) error
 }
 
 func New(version string, in io.Reader, out, errOut io.Writer) (*App, error) {
@@ -40,7 +42,7 @@ func New(version string, in io.Reader, out, errOut io.Writer) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &App{version: version, in: in, out: out, errOut: errOut, store: store, now: time.Now, getenv: os.Getenv}, nil
+	return &App{version: version, in: in, out: out, errOut: errOut, store: store, now: time.Now, getenv: os.Getenv, build: npmBuild}, nil
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
@@ -73,24 +75,30 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) printHelp() {
-	fmt.Fprint(a.out, `PageFerry publishes a local HTML document as a stable public URL.
+	fmt.Fprint(a.out, `PageFerry publishes a local HTML document or static site as a stable public URL.
 
 Usage:
   pageferry auth set <api-key> [--api-url <url>]
   pageferry auth login [--api-url <url>]
   pageferry whoami [--api-url <url>]
-  pageferry upload <file> [--draft <id>] [--new] [--name <filename>]
-                   [--description <text>] [--temporary <duration>]
+  pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>]
+                   [--build] [--description <text>] [--temporary <duration>]
                    [--public | --password <password> | --email <address>]
                    [--env <NAME=value>] [--secret <NAME=value>]
                    [--workers-dev] [--api-url <url>]
-  pageferry validate <file> [--name <filename>]
+  pageferry validate <file|directory> [--name <filename>]
   pageferry list [--api-url <url>] [--json]
   pageferry skill install --agent <opencode|codex|claude|cursor|all>
                           [--local|--global] [--force]
                           (opencode/codex/cursor → .agents/skills; claude → .claude/skills)
   pageferry update check
   pageferry --version
+
+Static sites:
+  Pass a build output directory (with index.html at its root) to publish every
+  file, e.g. a Slidev deck: npm run build && pageferry upload dist
+  Given a project directory, PageFerry uses its dist/ folder; --build runs
+  "npm run build" there first.
 
 Environment:
   PAGEFERRY_API_URL  Override the saved API origin.
@@ -100,7 +108,7 @@ Environment:
 
 func (a *App) validate(args []string) error {
 	if len(args) == 1 && isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry validate <file> [--name <filename>]")
+		fmt.Fprintln(a.out, "Usage: pageferry validate <file|directory> [--name <filename>]")
 		return nil
 	}
 	options, positional, err := parseOptions(args, map[string]bool{"name": true})
@@ -108,7 +116,7 @@ func (a *App) validate(args []string) error {
 		return err
 	}
 	if len(positional) != 1 {
-		return errors.New("usage: pageferry validate <file> [--name <filename>]")
+		return errors.New("usage: pageferry validate <file|directory> [--name <filename>]")
 	}
 	absolute, err := filepath.Abs(positional[0])
 	if err != nil {
@@ -117,6 +125,20 @@ func (a *App) validate(args []string) error {
 	info, err := os.Stat(absolute)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", absolute, err)
+	}
+	if info.IsDir() {
+		if _, supplied := options["name"]; supplied {
+			return errors.New("--name applies to single HTML files only")
+		}
+		site, err := a.collectSite(absolute)
+		if err != nil {
+			return err
+		}
+		for _, warning := range site.Warnings {
+			fmt.Fprintf(a.errOut, "warning: %s\n", warning)
+		}
+		fmt.Fprintf(a.out, "Valid PageFerry site: %s (%d files, %s)\n", site.Root, len(site.Files), humanBytes(site.Bytes))
+		return nil
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", absolute)
@@ -268,16 +290,16 @@ func (a *App) whoami(ctx context.Context, args []string) error {
 
 func (a *App) upload(ctx context.Context, args []string) error {
 	if len(args) == 1 && isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry upload <file> [--draft <id>] [--new] [--name <filename>] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
+		fmt.Fprintln(a.out, "Usage: pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>] [--build] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
 		return nil
 	}
-	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false}
+	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false, "build": false}
 	options, positional, err := parseOptions(args, spec)
 	if err != nil {
 		return err
 	}
 	if len(positional) != 1 {
-		return errors.New("usage: pageferry upload <file> [options]")
+		return errors.New("usage: pageferry upload <file|directory> [options]")
 	}
 	if _, newDraft := options["new"]; newDraft && options["draft"] != "" {
 		return errors.New("--new and --draft cannot be used together")
@@ -297,28 +319,57 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", absolute, err)
 	}
-	if !info.Mode().IsRegular() {
+	_, build := options["build"]
+	if info.IsDir() {
+		if _, supplied := options["name"]; supplied {
+			return errors.New("--name applies to single HTML files only")
+		}
+	} else if !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", absolute)
+	} else if build {
+		return errors.New("--build requires a project directory")
 	}
 	client, err := a.authenticatedClient(options["api-url"])
 	if err != nil {
 		return err
 	}
-	content, err := os.ReadFile(absolute)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", absolute, err)
-	}
-	validation := policy.ValidateHTML(content)
-	if len(validation.Errors) > 0 {
-		return fmt.Errorf("HTML validation failed:\n  - %s", strings.Join(validation.Errors, "\n  - "))
-	}
-	filename := filepath.Base(absolute)
-	if suppliedName, supplied := options["name"]; supplied {
-		filename = suppliedName
-	}
-	filename, filenameErrors := policy.ValidateFilename(filename)
-	if err := policy.FilenameError(filenameErrors); err != nil {
-		return err
+	var (
+		content  []byte
+		filename string
+		site     policy.SiteResult
+		warnings []string
+	)
+	if info.IsDir() {
+		if build {
+			fmt.Fprintf(a.errOut, "Running npm run build in %s\n", absolute)
+			if err := a.build(ctx, absolute, a.errOut); err != nil {
+				return fmt.Errorf("npm run build: %w", err)
+			}
+		}
+		site, err = a.collectSite(absolute)
+		if err != nil {
+			return err
+		}
+		warnings = site.Warnings
+	} else {
+		content, err = os.ReadFile(absolute)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", absolute, err)
+		}
+		validation := policy.ValidateHTML(content)
+		if len(validation.Errors) > 0 {
+			return fmt.Errorf("HTML validation failed:\n  - %s", strings.Join(validation.Errors, "\n  - "))
+		}
+		warnings = validation.Warnings
+		filename = filepath.Base(absolute)
+		if suppliedName, supplied := options["name"]; supplied {
+			filename = suppliedName
+		}
+		var filenameErrors []string
+		filename, filenameErrors = policy.ValidateFilename(filename)
+		if err := policy.FilenameError(filenameErrors); err != nil {
+			return err
+		}
 	}
 	drafts := a.store.LoadDrafts()
 	draftID := options["draft"]
@@ -356,9 +407,24 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if _, ok := options["workers-dev"]; ok {
 		request.HostingMode = "workers_dev"
 	}
-	hash := sha256.Sum256(content)
-	request.Metadata = provenance.Collect(ctx, absolute, a.version, hex.EncodeToString(hash[:]))
-	response, err := client.Upload(ctx, request)
+	var response api.UploadResponse
+	if info.IsDir() {
+		files := make([]api.SiteFile, len(site.Files))
+		for index, file := range site.Files {
+			files[index] = api.SiteFile{Path: file.Path, Absolute: file.Absolute}
+		}
+		hash, digestErr := siteDigest(site.Files)
+		if digestErr != nil {
+			return digestErr
+		}
+		request.Metadata = provenance.Collect(ctx, site.Root, a.version, hash)
+		fmt.Fprintf(a.errOut, "Uploading %d files (%s) from %s\n", len(files), humanBytes(site.Bytes), site.Root)
+		response, err = client.UploadSite(ctx, request, files)
+	} else {
+		hash := sha256.Sum256(content)
+		request.Metadata = provenance.Collect(ctx, absolute, a.version, hex.EncodeToString(hash[:]))
+		response, err = client.Upload(ctx, request)
+	}
 	if err != nil {
 		return err
 	}
@@ -374,7 +440,12 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if response.VersionNumber > 1 || draftID != "" {
 		action = "Updated"
 	}
-	fmt.Fprintf(a.out, "%s draft %s (version %d)\nPublic URL: %s\nRaw URL: %s\n", action, response.DraftID, response.VersionNumber, response.PublicURL, response.RawURL)
+	fmt.Fprintf(a.out, "%s draft %s (version %d)\nPublic URL: %s\n", action, response.DraftID, response.VersionNumber, response.PublicURL)
+	if response.ContentKind == "site" {
+		fmt.Fprintf(a.out, "Files: %d\n", response.FileCount)
+	} else {
+		fmt.Fprintf(a.out, "Raw URL: %s\n", response.RawURL)
+	}
 	if response.VersionURL != "" {
 		fmt.Fprintf(a.out, "Version URL: %s\n", response.VersionURL)
 	}
@@ -388,10 +459,72 @@ func (a *App) upload(ctx context.Context, args []string) error {
 			fmt.Fprintf(a.out, "Expires: %s\n", *response.ExpiresAt)
 		}
 	}
-	for _, warning := range uniqueStrings(append(validation.Warnings, response.Warnings...)) {
+	for _, warning := range uniqueStrings(append(warnings, response.Warnings...)) {
 		fmt.Fprintf(a.errOut, "warning: %s\n", warning)
 	}
 	return nil
+}
+
+// collectSite resolves the directory to publish: the directory itself when it
+// holds index.html, otherwise its dist/ build output (Slidev, Vite, …).
+func (a *App) collectSite(directory string) (policy.SiteResult, error) {
+	root := directory
+	if _, err := os.Stat(filepath.Join(root, policy.SiteIndex)); err != nil {
+		dist := filepath.Join(directory, "dist")
+		if _, distErr := os.Stat(filepath.Join(dist, policy.SiteIndex)); distErr != nil {
+			return policy.SiteResult{}, fmt.Errorf("no index.html in %s or %s; build the site first (e.g. npm run build) or pass --build", directory, dist)
+		}
+		root = dist
+	}
+	site, err := policy.CollectSite(root)
+	if err != nil {
+		return site, err
+	}
+	for _, skipped := range site.Skipped {
+		fmt.Fprintf(a.errOut, "skipped: %s\n", skipped)
+	}
+	if len(site.Errors) > 0 {
+		return site, fmt.Errorf("site validation failed:\n  - %s", strings.Join(site.Errors, "\n  - "))
+	}
+	return site, nil
+}
+
+// siteDigest fingerprints a bundle as the hash of its "path NUL sha256" lines.
+func siteDigest(files []policy.SiteFile) (string, error) {
+	digest := sha256.New()
+	for _, file := range files {
+		source, err := os.Open(file.Absolute)
+		if err != nil {
+			return "", err
+		}
+		fileDigest := sha256.New()
+		_, err = io.Copy(fileDigest, source)
+		source.Close()
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", file.Absolute, err)
+		}
+		fmt.Fprintf(digest, "%s\x00%x\n", file.Path, fileDigest.Sum(nil))
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func npmBuild(ctx context.Context, dir string, output io.Writer) error {
+	command := exec.CommandContext(ctx, "npm", "run", "build")
+	command.Dir = dir
+	command.Stdout = output
+	command.Stderr = output
+	return command.Run()
+}
+
+func humanBytes(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(size)/(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(size)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 func (a *App) list(ctx context.Context, args []string) error {
@@ -440,6 +573,9 @@ func (a *App) list(ctx context.Context, args []string) error {
 		}
 		updated := relativeTime(draft.UpdatedAt, a.now())
 		states := []string{draft.HostingMode}
+		if draft.ContentKind == "site" {
+			states = append(states, "site")
+		}
 		if draft.ExpiresAt == nil {
 			states = append(states, "permanent")
 		} else if draft.Expired {

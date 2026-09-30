@@ -1,6 +1,6 @@
 ---
 name: pageferry
-description: Publish safe static HTML documents with PageFerry and retrieve PageFerry draft URLs. Use when sharing a plan, proposal, report, brief, or other standalone HTML artifact through PageFerry, or when the user supplies a PageFerry URL.
+description: Publish safe static HTML documents or static site builds (such as Slidev decks) with PageFerry and retrieve PageFerry draft URLs. Use when sharing a plan, proposal, report, brief, slide deck, or other HTML artifact through PageFerry, or when the user supplies a PageFerry URL.
 ---
 
 # PageFerry
@@ -40,3 +40,15 @@ pageferry upload <file-path>
 Return the public URL printed by the command. Reusing the same local path updates its existing draft; add `--new` only when the user needs a separate draft.
 
 Use `--description <text>` when a dashboard summary is useful. Use `--temporary <duration>` for an expiring draft; accepted durations range from `5m` through `30d`. Dedicated `--workers-dev` hosting is not available yet, so do not select it.
+
+## Publish a static site or Slidev deck
+
+A build output directory with `index.html` at its root (for example the `dist/` produced by `npm run build` in a [Slidev](https://sli.dev) project) is published as a whole: every file is served from the draft origin, and extension-less routes such as `/3` or `/presenter/3` fall back to `index.html`. Keep Slidev's default `/` base; do not pass `--base`.
+
+```sh
+pageferry upload <project-dir> --build   # runs npm run build, then publishes dist/
+pageferry upload <project-dir>/dist      # publishes an existing build
+pageferry validate <project-dir>         # checks dist/ offline
+```
+
+Given a project directory without `index.html`, PageFerry uses its `dist/` folder. Hidden files are skipped. Every HTML file in the bundle follows the document policy above, except that scripts may use same-origin paths such as `/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files.

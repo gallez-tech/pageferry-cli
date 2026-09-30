@@ -112,3 +112,30 @@ func contains(values []string, target string) bool {
 	}
 	return false
 }
+
+func TestRelativeScriptsOnlyAllowedForSites(t *testing.T) {
+	document := []byte(`<title>x</title><script type="module" src="/assets/index-abc.js"></script>`)
+	if len(ValidateHTML(document).Errors) == 0 {
+		t.Fatal("single documents must not load relative scripts")
+	}
+	if errors := ValidateHTMLWithOptions(document, HTMLOptions{AllowRelativeScripts: true}).Errors; len(errors) != 0 {
+		t.Fatalf("errors = %v", errors)
+	}
+	insecure := []byte(`<title>x</title><script src="http://example.com/x.js"></script>`)
+	if len(ValidateHTMLWithOptions(insecure, HTMLOptions{AllowRelativeScripts: true}).Errors) == 0 {
+		t.Fatal("http scripts must stay blocked")
+	}
+}
+
+func TestValidateSitePath(t *testing.T) {
+	for _, valid := range []string{"index.html", "assets/index-abc.js", "404.html"} {
+		if message := ValidateSitePath(valid); message != "" {
+			t.Errorf("%s: %s", valid, message)
+		}
+	}
+	for _, invalid := range []string{"", "/index.html", "../x", "a//b", ".env", "a/.git/config", "__pageferry/x", `a\b`, "a?b"} {
+		if ValidateSitePath(invalid) == "" {
+			t.Errorf("%q was accepted", invalid)
+		}
+	}
+}

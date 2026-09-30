@@ -31,7 +31,17 @@ type HTMLResult struct {
 	Errors             []string
 }
 
+// HTMLOptions adjusts the document policy. Site bundles serve their own scripts
+// from the draft origin, so they may reference same-origin script paths.
+type HTMLOptions struct {
+	AllowRelativeScripts bool
+}
+
 func ValidateHTML(content []byte) HTMLResult {
+	return ValidateHTMLWithOptions(content, HTMLOptions{})
+}
+
+func ValidateHTMLWithOptions(content []byte, options HTMLOptions) HTMLResult {
 	result := HTMLResult{}
 	if !utf8.Valid(content) {
 		result.Errors = append(result.Errors, "HTML document is not valid UTF-8.")
@@ -67,7 +77,7 @@ func ValidateHTML(content []byte) HTMLResult {
 			attrs := attributes(node)
 			if tag == "script" {
 				result.HasInlineScript = true
-				if src, ok := attrs["src"]; ok && !isHTTPSURL(src) {
+				if src, ok := attrs["src"]; ok && !isHTTPSURL(src) && !(options.AllowRelativeScripts && isRelativeURL(src)) {
 					result.Errors = append(result.Errors, "External script sources must use HTTPS.")
 				}
 				typ := strings.ToLower(strings.TrimSpace(attrs["type"]))
@@ -188,6 +198,15 @@ func isHTTPSURL(value string) bool {
 	}
 	parsed, err := url.Parse(value)
 	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
+}
+
+func isRelativeURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Scheme == "" && parsed.Host == ""
 }
 
 func truncateRunes(value string, limit int) string {

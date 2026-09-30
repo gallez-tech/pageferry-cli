@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
 	"strings"
 	"time"
 )
@@ -28,8 +31,9 @@ type Identity struct {
 }
 
 type UploadRequest struct {
-	HTML             string            `json:"html"`
-	Filename         string            `json:"filename"`
+	HTML             string            `json:"html,omitempty"`
+	Filename         string            `json:"filename,omitempty"`
+	Files            []string          `json:"files,omitempty"`
 	DraftID          string            `json:"draftId,omitempty"`
 	Description      *string           `json:"description,omitempty"`
 	HostingMode      string            `json:"hostingMode,omitempty"`
@@ -59,6 +63,14 @@ type UploadResponse struct {
 	ExpiresAt     *string  `json:"expiresAt"`
 	Warnings      []string `json:"warnings"`
 	AccessMode    string   `json:"accessMode"`
+	ContentKind   string   `json:"contentKind"`
+	FileCount     int      `json:"fileCount"`
+}
+
+// SiteFile is a bundle file to stream in a site upload.
+type SiteFile struct {
+	Path     string
+	Absolute string
 }
 
 type Draft struct {
@@ -80,6 +92,7 @@ type Draft struct {
 	PublicURL           string  `json:"publicUrl"`
 	RawURL              string  `json:"rawUrl"`
 	AccessMode          string  `json:"accessMode"`
+	ContentKind         string  `json:"contentKind"`
 }
 
 type APIError struct {
@@ -124,6 +137,51 @@ func (c *Client) Upload(ctx context.Context, request UploadRequest) (UploadRespo
 	return response, err
 }
 
+// UploadSite publishes a multi-file static site. The multipart body carries a
+// `metadata` JSON field (the upload options plus the file paths) followed by one
+// `file` part per path, in the same order. The body is streamed from disk.
+func (c *Client) UploadSite(ctx context.Context, request UploadRequest, files []SiteFile) (UploadResponse, error) {
+	request.HTML, request.Filename, request.Files = "", "", make([]string, len(files))
+	for index, file := range files {
+		request.Files[index] = file.Path
+	}
+	metadata, err := json.Marshal(request)
+	if err != nil {
+		return UploadResponse{}, err
+	}
+	reader, writer := io.Pipe()
+	form := multipart.NewWriter(writer)
+	go func() {
+		writer.CloseWithError(writeSiteForm(form, metadata, files))
+	}()
+	var response UploadResponse
+	err = c.send(ctx, http.MethodPost, "/api/uploads", reader, form.FormDataContentType(), 10*time.Minute, &response)
+	_ = reader.Close()
+	return response, err
+}
+
+func writeSiteForm(form *multipart.Writer, metadata []byte, files []SiteFile) error {
+	if err := form.WriteField("metadata", string(metadata)); err != nil {
+		return err
+	}
+	for _, file := range files {
+		part, err := form.CreateFormFile("file", path.Base(file.Path))
+		if err != nil {
+			return err
+		}
+		source, err := os.Open(file.Absolute)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(part, source)
+		source.Close()
+		if err != nil {
+			return fmt.Errorf("read %s: %w", file.Absolute, err)
+		}
+	}
+	return form.Close()
+}
+
 func (c *Client) Drafts(ctx context.Context) ([]Draft, error) {
 	var response struct {
 		Drafts []Draft `json:"drafts"`
@@ -133,14 +191,17 @@ func (c *Client) Drafts(ctx context.Context) ([]Draft, error) {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, target any) error {
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(data)
+	if body == nil {
+		return c.send(ctx, method, path, nil, "", 30*time.Second, target)
 	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return c.send(ctx, method, path, bytes.NewReader(data), "application/json", 30*time.Second, target)
+}
+
+func (c *Client) send(ctx context.Context, method, path string, reader io.Reader, contentType string, timeout time.Duration, target any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.Origin+path, reader)
 	if err != nil {
 		return err
@@ -148,12 +209,12 @@ func (c *Client) do(ctx context.Context, method, path string, body, target any) 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("User-Agent", "pageferry/"+c.Version)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	client := c.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{Timeout: timeout}
 	}
 	response, err := client.Do(req)
 	if err != nil {
