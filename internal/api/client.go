@@ -50,6 +50,20 @@ type UploadAccess struct {
 	Emails   []string `json:"emails,omitempty"`
 }
 
+// DraftAccessRequest changes a draft's reader access without publishing a
+// version.
+type DraftAccessRequest struct {
+	Mode     string   `json:"mode,omitempty"`
+	Password string   `json:"password,omitempty"`
+	Emails   []string `json:"emails,omitempty"`
+}
+
+type DraftAccessResponse struct {
+	DraftID      string   `json:"draftId"`
+	AccessMode   string   `json:"accessMode"`
+	AccessEmails []string `json:"accessEmails"`
+}
+
 type UploadResponse struct {
 	DraftID       string   `json:"draftId"`
 	VersionID     string   `json:"versionId"`
@@ -135,6 +149,20 @@ func (c *Client) Upload(ctx context.Context, request UploadRequest) (UploadRespo
 	var response UploadResponse
 	err := c.do(ctx, http.MethodPost, "/api/uploads", request, &response)
 	return response, err
+}
+
+// UpdateDraftAccess changes a draft's reader access without creating a new
+// version.
+func (c *Client) UpdateDraftAccess(ctx context.Context, draftID string, request DraftAccessRequest) (DraftAccessResponse, error) {
+	var response DraftAccessResponse
+	err := c.do(ctx, http.MethodPost, "/api/drafts/"+url.PathEscape(draftID)+"/access", request, &response)
+	return response, err
+}
+
+// SignOutDraftReaders invalidates every reader session and pending magic link.
+func (c *Client) SignOutDraftReaders(ctx context.Context, draftID string) error {
+	var response struct{}
+	return c.do(ctx, http.MethodPost, "/api/drafts/"+url.PathEscape(draftID)+"/sign-out-readers", nil, &response)
 }
 
 // UploadSite publishes a multi-file static site. The multipart body carries a

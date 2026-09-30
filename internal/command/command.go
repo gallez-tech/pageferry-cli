@@ -67,6 +67,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.list(ctx, args[1:])
 	case "keys":
 		return a.keys(ctx, args[1:])
+	case "access":
+		return a.access(ctx, args[1:])
 	case "skill":
 		return a.skill(args[1:])
 	case "update":
@@ -87,6 +89,8 @@ Usage:
   pageferry keys create [--name <key-name>] [--api-url <url>]
   pageferry keys rename <key-id> <key-name> [--api-url <url>]
   pageferry keys revoke <key-id> [--api-url <url>]
+  pageferry access <draft-id|file> [--public | --password <password> | --email <address>]
+                 [--sign-out-readers] [--api-url <url>]
   pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>]
                    [--build] [--description <text>] [--temporary <duration>]
                    [--public | --password <password> | --email <address>]
@@ -332,9 +336,9 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if _, workersDev := options["workers-dev"]; workersDev && options["temporary"] == "" {
 		return errors.New("--workers-dev requires --temporary")
 	}
-	_, makePublic := options["public"]
-	if boolCount(makePublic, options["password"] != "", options["email"] != "") > 1 {
-		return errors.New("--public, --password, and --email are mutually exclusive")
+	access, _, err := accessRequest(options)
+	if err != nil {
+		return err
 	}
 	absolute, err := filepath.Abs(positional[0])
 	if err != nil {
@@ -402,14 +406,8 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		draftID = drafts[absolute].DraftID
 	}
 	request := api.UploadRequest{HTML: string(content), Filename: filename, DraftID: draftID, HostingMode: "domain"}
-	if password := options["password"]; password != "" {
-		request.Access = &api.UploadAccess{Mode: "password", Password: password}
-	}
-	if raw := options["email"]; raw != "" {
-		request.Access = &api.UploadAccess{Mode: "email", Emails: optionValues(raw)}
-	}
-	if makePublic {
-		request.Access = &api.UploadAccess{Mode: "public"}
+	if access != nil {
+		request.Access = &api.UploadAccess{Mode: access.Mode, Password: access.Password, Emails: access.Emails}
 	}
 	request.Env, err = parseAssignments(optionValues(options["env"]))
 	if err != nil {

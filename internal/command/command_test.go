@@ -117,6 +117,96 @@ func TestUploadSendsPrivateAccessAndBackendVariables(t *testing.T) {
 	}
 }
 
+func TestAccessChangesDraftIDAndSignsOutReaders(t *testing.T) {
+	var paths []string
+	var access api.DraftAccessRequest
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		paths = append(paths, request.URL.Path)
+		if request.Header.Get("Authorization") != "Bearer pf_saved" {
+			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
+		}
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/drafts/abc123def456/access":
+			if err := json.NewDecoder(request.Body).Decode(&access); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(response).Encode(map[string]any{"ok": true, "draftId": "abc123def456", "accessMode": "email", "accessEmails": []string{"reader@example.com"}})
+		case "/api/drafts/abc123def456/sign-out-readers":
+			_ = json.NewEncoder(response).Encode(map[string]any{"ok": true, "draftId": "abc123def456"})
+		default:
+			t.Errorf("path = %s", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	app, out, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	if err := app.Run(context.Background(), []string{"access", "abc123def456", "--email", "Reader@Example.com", "--sign-out-readers"}); err != nil {
+		t.Fatal(err)
+	}
+	if access.Mode != "email" || len(access.Emails) != 1 || access.Emails[0] != "reader@example.com" {
+		t.Fatalf("access = %#v", access)
+	}
+	if strings.Join(paths, ",") != "/api/drafts/abc123def456/access,/api/drafts/abc123def456/sign-out-readers" {
+		t.Fatalf("paths = %#v", paths)
+	}
+	if got := out.String(); !strings.Contains(got, "Access mode: email") || !strings.Contains(got, "Reader emails: reader@example.com") || !strings.Contains(got, "Readers signed out.") {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestAccessResolvesSavedPath(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		gotPath = request.URL.Path
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{"ok": true, "draftId": "abc123def456", "accessMode": "public", "accessEmails": []string{}})
+	}))
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	path := filepath.Join(t.TempDir(), "site")
+	if err := app.store.SaveDrafts(map[string]state.Draft{path: {DraftID: "abc123def456"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run(context.Background(), []string{"access", path, "--public"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/drafts/abc123def456/access" {
+		t.Fatalf("path = %q", gotPath)
+	}
+}
+
+func TestAccessRejectsUnknownPathAndConflictingFlags(t *testing.T) {
+	app, _, _ := testApp(t, "")
+	err := app.Run(context.Background(), []string{"access", filepath.Join(t.TempDir(), "unknown.html"), "--public"})
+	if err == nil || !strings.Contains(err.Error(), "no saved draft") {
+		t.Fatalf("unknown path error = %v", err)
+	}
+	err = app.Run(context.Background(), []string{"access", "abc123def456", "--public", "--password", "long-password"})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("conflict error = %v", err)
+	}
+}
+
+func TestAccessSurfacesAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusNotFound)
+		_, _ = response.Write([]byte(`{"ok":false,"error":"Draft not found."}`))
+	}))
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	err := app.Run(context.Background(), []string{"access", "abc123def456", "--public"})
+	if err == nil || !strings.Contains(err.Error(), "Draft not found.") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestValidateRunsOfflineAndUsesPublicFilename(t *testing.T) {
 	app, out, errOut := testApp(t, "")
 	file := filepath.Join(t.TempDir(), "source.txt")

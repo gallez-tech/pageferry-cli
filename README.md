@@ -44,6 +44,15 @@ pageferry keys rename <key-id> "Nightly CI"
 pageferry keys revoke <key-id>
 ```
 
+Change a draft's access without publishing a new version. Pass the original upload
+path (when it is saved locally) or its 12-character draft ID; `--sign-out-readers`
+also invalidates every reader session and pending magic link:
+
+```sh
+pageferry access report.html --email reader@example.com
+pageferry access abc123def456 --public --sign-out-readers
+```
+
 Check whether the installed release is current with:
 
 ```sh
@@ -89,7 +98,7 @@ pageferry upload app.html --email reader@example.com
 
 These options are repeatable. Password and email access are mutually exclusive. Email
 access is accepted, but magic-link delivery awaits the future SMTP/API integration. Use
-`--public` on a later upload to remove access protection.
+`pageferry access <draft-id|file> --public` to remove access protection without re-publishing.
 
 ## Static sites and Slidev decks
 

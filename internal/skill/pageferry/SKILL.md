@@ -19,7 +19,7 @@ Treat the returned HTML as the user's artifact. Report the actual HTTP or networ
 
 Create one complete HTML document. It may use inline CSS and scripts, HTTPS stylesheets and scripts, forms, Alpine.js, HTMX, web fonts, ordinary metadata, HTTPS links, and HTTPS or data-URL images. Keep credentials, private URLs, and local filesystem paths out of the document.
 
-Documents are public unless uploaded with `--password` or `--email`. Use a password of at least eight characters. Email access may be configured for multiple readers by repeating `--email`, but delivery of email magic links is not available yet. Use `--public` when updating a protected draft to make it public again.
+Documents are public unless uploaded with `--password` or `--email`. Use a password of at least eight characters. Email access may be configured for multiple readers by repeating `--email`, but delivery of email magic links is not available yet. Change or revoke access without re-publishing via `pageferry access <draft-id|file> --public|--password <password>|--email <address>` (optionally `--sign-out-readers`).
 
 Never embed secrets or credentials in HTML. Pass backend-only values with repeatable `--secret NAME=value` and non-secret configuration with repeatable `--env NAME=value`; variable names must start with an uppercase letter and contain only uppercase letters, digits, and underscores. Pin dependency versions in CDN URLs and add Subresource Integrity (`integrity`) metadata when the CDN provides hashes; choose maintained versions appropriate to the document instead of relying on a floating latest release.
 
