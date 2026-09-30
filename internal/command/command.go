@@ -65,6 +65,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.validate(args[1:])
 	case "list":
 		return a.list(ctx, args[1:])
+	case "keys":
+		return a.keys(ctx, args[1:])
 	case "skill":
 		return a.skill(args[1:])
 	case "update":
@@ -78,9 +80,13 @@ func (a *App) printHelp() {
 	fmt.Fprint(a.out, `PageFerry publishes a local HTML document or static site as a stable public URL.
 
 Usage:
-  pageferry auth set <api-key> [--api-url <url>]
-  pageferry auth login [--api-url <url>]
+  pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]
+  pageferry auth login [--name <key-name>] [--api-url <url>]
   pageferry whoami [--api-url <url>]
+  pageferry keys list [--json] [--api-url <url>]
+  pageferry keys create [--name <key-name>] [--api-url <url>]
+  pageferry keys rename <key-id> <key-name> [--api-url <url>]
+  pageferry keys revoke <key-id> [--api-url <url>]
   pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>]
                    [--build] [--description <text>] [--temporary <duration>]
                    [--public | --password <password> | --email <address>]
@@ -198,15 +204,25 @@ func (a *App) auth(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "set":
 		if len(args) == 2 && isHelp(args[1]) {
-			fmt.Fprintln(a.out, "Usage: pageferry auth set <api-key> [--api-url <url>]")
+			fmt.Fprintln(a.out, "Usage: pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]")
 			return nil
 		}
-		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true})
+		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true})
 		if err != nil {
 			return err
 		}
 		if len(positional) != 1 || strings.TrimSpace(positional[0]) == "" {
-			return errors.New("usage: pageferry auth set <api-key> [--api-url <url>]")
+			return errors.New("usage: pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]")
+		}
+		key := strings.TrimSpace(positional[0])
+		if name, ok := options["name"]; ok {
+			origin, err := a.origin(options["api-url"])
+			if err != nil {
+				return err
+			}
+			if _, err := a.nameKey(ctx, a.client(origin, key), name); err != nil {
+				return err
+			}
 		}
 		if raw, ok := options["api-url"]; ok {
 			origin, err := api.ValidateOrigin(raw)
@@ -217,7 +233,7 @@ func (a *App) auth(ctx context.Context, args []string) error {
 				return fmt.Errorf("save API URL: %w", err)
 			}
 		}
-		credentials := state.Credentials{APIKey: strings.TrimSpace(positional[0]), UpdatedAt: a.now().UTC()}
+		credentials := state.Credentials{APIKey: key, UpdatedAt: a.now().UTC()}
 		if err := a.store.SaveCredentials(credentials); err != nil {
 			return fmt.Errorf("save credentials: %w", err)
 		}
@@ -225,15 +241,18 @@ func (a *App) auth(ctx context.Context, args []string) error {
 		return nil
 	case "login":
 		if len(args) == 2 && isHelp(args[1]) {
-			fmt.Fprintln(a.out, "Usage: pageferry auth login [--api-url <url>]")
+			fmt.Fprintln(a.out, "Usage: pageferry auth login [--name <key-name>] [--api-url <url>]")
 			return nil
 		}
-		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true})
+		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true})
 		if err != nil {
 			return err
 		}
 		if len(positional) != 0 {
-			return errors.New("usage: pageferry auth login [--api-url <url>]")
+			return errors.New("usage: pageferry auth login [--name <key-name>] [--api-url <url>]")
+		}
+		if name, ok := options["name"]; ok && strings.TrimSpace(name) == "" {
+			return errors.New("--name must not be empty")
 		}
 		origin, err := a.origin(options["api-url"])
 		if err != nil {
@@ -245,9 +264,15 @@ func (a *App) auth(ctx context.Context, args []string) error {
 			return errors.New("no API key entered; credentials were not changed")
 		}
 		key := strings.TrimSpace(scanner.Text())
-		identity, err := a.client(origin, key).Me(ctx)
+		client := a.client(origin, key)
+		identity, err := client.Me(ctx)
 		if err != nil {
 			return fmt.Errorf("validate API key: %w", err)
+		}
+		if name, ok := options["name"]; ok {
+			if identity, err = a.nameKey(ctx, client, name); err != nil {
+				return err
+			}
 		}
 		if _, supplied := options["api-url"]; supplied {
 			if err := a.store.SaveConfig(state.Config{APIURL: origin}); err != nil {

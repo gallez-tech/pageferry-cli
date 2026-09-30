@@ -34,6 +34,16 @@ PAGEFERRY_API_KEY=pf_your_key pageferry whoami
 
 Use `PAGEFERRY_API_URL` or a command's `--api-url` option to target a custom server.
 
+Name keys so the dashboard shows which machine uses which, and manage them from the CLI:
+
+```sh
+pageferry auth login --name "Work laptop"
+pageferry keys list                       # * marks the key in use
+pageferry keys create --name "CI"         # prints the new key once
+pageferry keys rename <key-id> "Nightly CI"
+pageferry keys revoke <key-id>
+```
+
 Check whether the installed release is current with:
 
 ```sh
@@ -61,6 +71,11 @@ Validate a document locally without an API key or network access:
 pageferry validate report.html
 pageferry validate generated-output.tmp --name report.html
 ```
+
+Validation also warns, without blocking upload, about markup that breaks on phones: a
+missing or zoom-blocking viewport, a missing `<html lang>`, fixed pixel widths, form
+controls below 16px (iOS Safari zooms on focus), and `100vh` without an `svh`/`dvh`
+alternative.
 
 Publishing requires a valid key for the server's configured owner (or its operator
 bootstrap key). Drafts are public by default. Protect one and store backend-only values:

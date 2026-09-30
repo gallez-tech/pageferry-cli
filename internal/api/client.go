@@ -190,6 +190,43 @@ func (c *Client) Drafts(ctx context.Context) ([]Draft, error) {
 	return response.Drafts, err
 }
 
+type APIKey struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	CreatedAt  string  `json:"createdAt"`
+	LastUsedAt *string `json:"lastUsedAt"`
+	Current    bool    `json:"current"`
+}
+
+type CreatedAPIKey struct {
+	APIKey APIKey `json:"apiKey"`
+	Token  string `json:"token"`
+}
+
+func (c *Client) APIKeys(ctx context.Context) ([]APIKey, error) {
+	var response struct {
+		APIKeys []APIKey `json:"apiKeys"`
+	}
+	err := c.do(ctx, http.MethodGet, "/api/api-keys", nil, &response)
+	return response.APIKeys, err
+}
+
+func (c *Client) CreateAPIKey(ctx context.Context, name string) (CreatedAPIKey, error) {
+	var response CreatedAPIKey
+	err := c.do(ctx, http.MethodPost, "/api/api-keys", map[string]string{"name": name}, &response)
+	return response, err
+}
+
+func (c *Client) RenameAPIKey(ctx context.Context, id, name string) error {
+	var response struct{}
+	return c.do(ctx, http.MethodPost, "/api/api-keys/"+url.PathEscape(id)+"/rename", map[string]string{"name": name}, &response)
+}
+
+func (c *Client) RevokeAPIKey(ctx context.Context, id string) error {
+	var response struct{}
+	return c.do(ctx, http.MethodPost, "/api/api-keys/"+url.PathEscape(id)+"/revoke", map[string]string{}, &response)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body, target any) error {
 	if body == nil {
 		return c.send(ctx, method, path, nil, "", 30*time.Second, target)

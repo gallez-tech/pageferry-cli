@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -137,5 +138,57 @@ func TestValidateSitePath(t *testing.T) {
 		if ValidateSitePath(invalid) == "" {
 			t.Errorf("%q was accepted", invalid)
 		}
+	}
+}
+
+func TestValidateHTMLReportsNoMobileWarningsForPhoneReadyDocument(t *testing.T) {
+	result := ValidateHTML([]byte(`<!doctype html><html lang="en"><head>
+      <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+      <title>Report</title>
+      <style>
+        main { max-width: 960px; min-height: 100vh; min-height: 100svh; }
+        @media (min-width: 700px) { main { padding: 2rem; } }
+        input, select { font-size: 16px; }
+        .input-hint { font-size: 12px; }
+      </style>
+    </head><body><main><input style="font: 1rem system-ui"></main></body></html>`))
+	if len(result.Errors) != 0 || len(result.Warnings) != 0 {
+		t.Fatalf("errors = %v, warnings = %v", result.Errors, result.Warnings)
+	}
+}
+
+func TestValidateHTMLWarnsAboutMobileHostileMarkup(t *testing.T) {
+	result := ValidateHTML([]byte(`<!doctype html><html><head><title>Report</title>
+      <style>
+        body { width: 960px; }
+        .hero { height: 100vh; }
+        /* select { font-size: 16px; } */
+        select { font: 600 14px/1.2 sans-serif; }
+      </style>
+    </head><body><p>Hi</p></body></html>`))
+	assertWarnings(t, result, WarningNoViewport, WarningFixedWidth, WarningSmallFormControlFont, WarningViewportHeight, WarningNoLang)
+}
+
+func TestValidateHTMLWarnsAboutRestrictiveViewports(t *testing.T) {
+	noZoom := ValidateHTML([]byte(`<!doctype html><html lang="en"><title>x</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">`))
+	assertWarnings(t, noZoom, WarningZoomDisabled)
+
+	unscalable := ValidateHTML([]byte(`<!doctype html><html lang="en"><title>x</title>
+      <meta name="viewport" content="width=device-width,user-scalable=no">`))
+	assertWarnings(t, unscalable, WarningZoomDisabled, WarningNoInitialScale)
+}
+
+func TestValidateHTMLWarnsAboutSmallInlineFormControlFonts(t *testing.T) {
+	result := ValidateHTML([]byte(`<!doctype html><html lang="en"><title>x</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <textarea style="font-size: .8rem"></textarea><p style="font-size: 12px">note</p>`))
+	assertWarnings(t, result, WarningSmallFormControlFont)
+}
+
+func assertWarnings(t *testing.T, result HTMLResult, want ...string) {
+	t.Helper()
+	if !slices.Equal(result.Warnings, want) {
+		t.Fatalf("warnings = %q, want %q", result.Warnings, want)
 	}
 }

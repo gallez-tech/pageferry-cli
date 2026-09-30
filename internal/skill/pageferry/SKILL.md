@@ -25,6 +25,25 @@ Never embed secrets or credentials in HTML. Pass backend-only values with repeat
 
 PageFerry rejects iframes, embeds, objects, applets, non-HTTPS external scripts, event-handler attributes, unsafe URL schemes, meta refresh, and unsafe CSS. Browser requests and form actions must use HTTPS.
 
+If a general web-design or data-visualisation skill is available in this environment, use it for visual direction and chart construction. The PageFerry rules in this skill still apply and take precedence where they conflict.
+
+## Design for phones
+
+Shared drafts are often opened on a phone, usually iOS Safari. Every document must:
+
+- Include `<html lang="…">` and `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`. Never disable zoom with `user-scalable=no` or `maximum-scale`.
+- Keep `input`, `select`, and `textarea` at a font size of at least 16px; smaller sizes make iOS zoom in on focus.
+- Avoid fixed pixel container widths. Use `max-width` with `ch` or `rem`, percentage or `rem` gutters, and `clamp()` for heading sizes.
+- Wrap wide tables in an `overflow-x: auto` container and give `pre` the same, so the page never scrolls sideways.
+- Let content define height. When a full-height element is unavoidable, use `100svh` rather than `100vh`.
+- Pad sticky or fixed edge elements with `env(safe-area-inset-*)`, for example `padding-bottom: max(1rem, env(safe-area-inset-bottom))`.
+- Declare `color-scheme: light dark` and style both schemes with `prefers-color-scheme`.
+- Make buttons, navigation items, and icon controls at least 44×44 CSS px.
+- Set `-webkit-text-size-adjust: 100%` and gate animation behind `prefers-reduced-motion`.
+- Prefer inline CSS over CDN frameworks; each external request is a round trip on a cellular link.
+
+`pageferry validate` warns about the most common mobile defects; treat those warnings as defects to fix.
+
 Save the HTML locally and validate it without uploading:
 
 ```sh

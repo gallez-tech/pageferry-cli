@@ -120,7 +120,7 @@ func TestUploadSendsPrivateAccessAndBackendVariables(t *testing.T) {
 func TestValidateRunsOfflineAndUsesPublicFilename(t *testing.T) {
 	app, out, errOut := testApp(t, "")
 	file := filepath.Join(t.TempDir(), "source.txt")
-	if err := os.WriteFile(file, []byte("<!doctype html><title>Report</title><p>hello</p>"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(`<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Report</title><p>hello</p>`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Run(context.Background(), []string{"validate", file, "--name", "report.html"}); err != nil {
@@ -144,7 +144,7 @@ func TestValidateReportsWarningsAndPolicyErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Blocked <iframe> tag found.") {
 		t.Fatalf("error = %v", err)
 	}
-	if !strings.Contains(errOut.String(), "No <title> found") {
+	if !strings.Contains(errOut.String(), "No <title> found") || !strings.Contains(errOut.String(), `No <meta name="viewport"> found`) {
 		t.Fatalf("stderr = %q", errOut.String())
 	}
 }
@@ -324,5 +324,98 @@ func TestUploadDirectoryReportsServerErrors(t *testing.T) {
 	}
 	if len(app.store.LoadDrafts()) != 0 {
 		t.Fatal("failed upload saved a draft mapping")
+	}
+}
+
+func keysServer(t *testing.T, renamed *map[string]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") != "Bearer pf_saved" {
+			http.Error(response, `{"error":"Missing or invalid API key."}`, http.StatusUnauthorized)
+			return
+		}
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/api/me":
+			_ = json.NewEncoder(response).Encode(map[string]any{"accountId": "acct", "accountName": "Owner", "apiKeyId": "key_1", "apiKeyName": "CLI · 2026-09-03"})
+		case request.Method == http.MethodGet && request.URL.Path == "/api/api-keys":
+			_ = json.NewEncoder(response).Encode(map[string]any{"apiKeys": []map[string]any{
+				{"id": "key_1", "name": "Laptop", "createdAt": "2026-09-01T12:00:00Z", "lastUsedAt": "2026-09-03T11:00:00Z", "current": true},
+				{"id": "key_2", "name": "CI", "createdAt": "2026-09-02T12:00:00Z", "lastUsedAt": nil, "current": false},
+			}})
+		case request.Method == http.MethodPost && request.URL.Path == "/api/api-keys":
+			var body map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			response.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(response).Encode(map[string]any{"apiKey": map[string]any{"id": "key_3", "name": body["name"]}, "token": "pf_new"})
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/rename"):
+			var body map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			(*renamed)[strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/api-keys/"), "/rename")] = body["name"]
+			_ = json.NewEncoder(response).Encode(map[string]any{"ok": true})
+		case request.Method == http.MethodPost && request.URL.Path == "/api/api-keys/key_2/revoke":
+			_ = json.NewEncoder(response).Encode(map[string]any{"ok": true})
+		default:
+			http.Error(response, `{"error":"not found"}`, http.StatusNotFound)
+		}
+	}))
+}
+
+func TestKeysCommands(t *testing.T) {
+	renamed := map[string]string{}
+	server := keysServer(t, &renamed)
+	defer server.Close()
+	app, out, _ := testApp(t, "")
+	if err := app.store.SaveConfig(state.Config{APIURL: server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"keys", "list"},
+		{"keys", "create", "--name", "Build server"},
+		{"keys", "rename", "key_2", "Nightly", "CI"},
+		{"keys", "revoke", "key_2"},
+	} {
+		if err := app.Run(context.Background(), args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	got := out.String()
+	for _, want := range []string{"* Laptop — key_1", "used 1h ago", "  CI — key_2", "never used", "Created API key Build server (key_3)", "pf_new", "Renamed API key key_2 to Nightly CI.", "Revoked API key key_2."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q:\n%s", want, got)
+		}
+	}
+	if renamed["key_2"] != "Nightly CI" {
+		t.Fatalf("renamed = %#v", renamed)
+	}
+}
+
+func TestLoginNamesTheKey(t *testing.T) {
+	renamed := map[string]string{}
+	server := keysServer(t, &renamed)
+	defer server.Close()
+	app, out, _ := testApp(t, "pf_saved\n")
+	if err := app.Run(context.Background(), []string{"auth", "login", "--name", "Work laptop", "--api-url", server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if renamed["key_1"] != "Work laptop" || !strings.Contains(out.String(), "with key Work laptop.") {
+		t.Fatalf("renamed = %#v output = %q", renamed, out.String())
+	}
+	if app.store.LoadCredentials().APIKey != "pf_saved" {
+		t.Fatal("credentials were not saved")
+	}
+}
+
+func TestAuthSetWithNameRejectsInvalidKeyWithoutSaving(t *testing.T) {
+	renamed := map[string]string{}
+	server := keysServer(t, &renamed)
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	err := app.Run(context.Background(), []string{"auth", "set", "pf_wrong", "--name", "Laptop", "--api-url", server.URL})
+	if err == nil || app.store.LoadCredentials().APIKey != "" {
+		t.Fatalf("error = %v credentials = %#v", err, app.store.LoadCredentials())
 	}
 }
