@@ -15,6 +15,23 @@ curl --fail --silent --show-error --location --max-time 30 '<pageferry-url>'
 
 Treat the returned HTML as the user's artifact. Report the actual HTTP or network error if retrieval fails.
 
+## Connect the CLI
+
+Use `pageferry whoami` to check authentication. Publishing commands use the CLI's
+saved credentials; they do not need an API key in the prompt or command arguments.
+
+If authentication is missing, run `pageferry auth start`
+(add `--api-url <origin>` for a custom host). Give the printed URL to the user and
+ask them to sign in, authorize the CLI, and return the one-time `pf_login_…` code.
+Run `pageferry auth complete <login-code>`, then verify with `pageferry whoami`.
+Start a new request if either the request or code expires.
+
+Let the CLI handle credential storage. Keep API keys and PKCE verifiers out of
+prompts, tool output, environment dumps, and published artifacts; use the one-time
+login code for setup. This workflow avoids sharing the API key with the model.
+An agent with unrestricted access to the same OS account can still read the saved
+credential file; isolating that access requires a separate credential broker.
+
 ## Publish a document
 
 Create one complete HTML document. It may use inline CSS and scripts, HTTPS stylesheets and scripts, forms, Alpine.js, HTMX, web fonts, ordinary metadata, HTTPS links, and HTTPS or data-URL images. Keep credentials, private URLs, and local filesystem paths out of the document.

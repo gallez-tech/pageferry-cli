@@ -303,3 +303,17 @@ func (c *Client) send(ctx context.Context, method, path string, reader io.Reader
 	}
 	return nil
 }
+
+func (c *Client) ExchangeLogin(ctx context.Context, code, verifier, redirectURI string) (string, error) {
+	var response struct {
+		Token string `json:"token"`
+	}
+	err := c.do(ctx, http.MethodPost, "/cli/auth/token", map[string]string{"code": code, "verifier": verifier, "redirectUri": redirectURI}, &response)
+	if err != nil {
+		return "", err
+	}
+	if response.Token == "" {
+		return "", errors.New("login exchange returned no API key")
+	}
+	return response.Token, nil
+}

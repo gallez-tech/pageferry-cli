@@ -17,6 +17,13 @@ type Credentials struct {
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 }
 
+type PendingLogin struct {
+	APIURL    string    `json:"apiUrl"`
+	Verifier  string    `json:"verifier"`
+	State     string    `json:"state"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 type Draft struct {
 	DraftID             string    `json:"draftId"`
 	PublicURL           string    `json:"publicUrl"`
@@ -57,6 +64,24 @@ func (s *Store) LoadCredentials() Credentials {
 
 func (s *Store) SaveCredentials(value Credentials) error {
 	return s.save("credentials.json", value)
+}
+
+func (s *Store) LoadPendingLogin() PendingLogin {
+	var value PendingLogin
+	s.load("pending-login.json", &value)
+	return value
+}
+
+func (s *Store) SavePendingLogin(value PendingLogin) error {
+	return s.save("pending-login.json", value)
+}
+
+func (s *Store) ClearPendingLogin() error {
+	err := os.Remove(filepath.Join(s.Dir, "pending-login.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func (s *Store) LoadDrafts() map[string]Draft {
