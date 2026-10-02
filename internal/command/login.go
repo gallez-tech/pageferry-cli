@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -89,7 +90,9 @@ func (a *App) browserLogin(ctx context.Context, origin, name string) error {
 	digest := sha256.Sum256([]byte(verifier))
 	params := url.Values{"redirect_uri": {redirectURI}, "state": {stateToken}, "code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}, "name": {name}}
 	target := origin + "/cli/auth/authorize?" + params.Encode()
-	fmt.Fprintf(a.out, "Opening PageFerry login. If the browser does not open, visit this URL on this computer:\n%s\n\nWaiting for authorization…\n", target)
+	fmt.Fprintf(a.out, "Opening PageFerry login. If the browser does not open, visit this URL:\n%s\n\n"+
+		"Using a browser on another device? Authorize there, then copy the address of the page\n"+
+		"that fails to load (%s?…) and paste it here.\n\nWaiting for authorization…\n", target, redirectURI)
 	openBrowser := a.openBrowser
 	if openBrowser == nil {
 		openBrowser = openLoginBrowser
@@ -97,15 +100,58 @@ func (a *App) browserLogin(ctx context.Context, origin, name string) error {
 	if err := openBrowser(target); err != nil {
 		fmt.Fprintln(a.errOut, "Could not open the browser; open the URL above manually.")
 	}
+	pasted := a.readPastedCallbacks(ctx, callbackURL, stateToken)
 	var authCode string
 	select {
 	case authCode = <-code:
+	case authCode = <-pasted:
 	case err := <-serverError:
 		return fmt.Errorf("login callback stopped: %w", err)
 	case <-ctx.Done():
 		return fmt.Errorf("login cancelled or timed out; credentials were not changed: %w", ctx.Err())
 	}
 	return a.finishLogin(ctx, origin, authCode, verifier, redirectURI)
+}
+
+// readPastedCallbacks accepts the callback address pasted from a browser on
+// another device, where 127.0.0.1 points at that device and the page fails to
+// load. Invalid lines are reported and reading continues; end of input simply
+// leaves the HTTP callback as the only way to finish.
+func (a *App) readPastedCallbacks(ctx context.Context, callbackURL *url.URL, stateToken string) <-chan string {
+	codes := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(a.in)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			pasted, err := url.Parse(line)
+			if err != nil || pasted.Host != callbackURL.Host || pasted.Path != callbackURL.Path ||
+				subtle.ConstantTimeCompare([]byte(pasted.Query().Get("state")), []byte(stateToken)) != 1 ||
+				pasted.Query().Get("code") == "" {
+				fmt.Fprintf(a.errOut, "That is not the callback address for this login; paste the full %s?… address.\n", callbackURL)
+				continue
+			}
+			select {
+			case codes <- pasted.Query().Get("code"):
+			case <-ctx.Done():
+			}
+			return
+		}
+	}()
+	return codes
+}
+
+// remoteSession reports an SSH terminal, where a browser opened by the CLI
+// would run on the remote host and could not reach the user.
+func (a *App) remoteSession() bool {
+	for _, name := range []string{"SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"} {
+		if a.getenv(name) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) finishLogin(ctx context.Context, origin, authCode, verifier, redirectURI string) error {

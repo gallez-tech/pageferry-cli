@@ -84,7 +84,7 @@ func (a *App) printHelp() {
 
 Usage:
   pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]
-  pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]
+  pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --browser | --manual]
   pageferry auth start [--name <key-name>] [--api-url <url>]
   pageferry auth complete <login-code>
   pageferry auth complete --stdin
@@ -253,15 +253,15 @@ func (a *App) auth(ctx context.Context, args []string) error {
 		return nil
 	case "login":
 		if len(args) == 2 && isHelp(args[1]) {
-			fmt.Fprintln(a.out, "Usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]")
+			fmt.Fprintln(a.out, "Usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --browser | --manual]")
 			return nil
 		}
-		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true, "manual": false, "headless": false})
+		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true, "manual": false, "headless": false, "browser": false})
 		if err != nil {
 			return err
 		}
 		if len(positional) != 0 {
-			return errors.New("usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]")
+			return errors.New("usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --browser | --manual]")
 		}
 		if name, ok := options["name"]; ok && strings.TrimSpace(name) == "" {
 			return errors.New("--name must not be empty")
@@ -271,9 +271,14 @@ func (a *App) auth(ctx context.Context, args []string) error {
 			return err
 		}
 		_, headless := options["headless"]
+		_, browser := options["browser"]
 		_, manual := options["manual"]
-		if headless && manual {
-			return errors.New("--headless and --manual cannot be used together")
+		if (headless && browser) || (headless && manual) || (browser && manual) {
+			return errors.New("use only one of --headless, --browser, and --manual")
+		}
+		if !headless && !browser && !manual && a.remoteSession() {
+			fmt.Fprintln(a.errOut, "SSH session detected: signing in with a one-time login code. Use --browser to open a browser on this host instead.")
+			headless = true
 		}
 		if headless {
 			return a.headlessLogin(ctx, origin, options["name"])
