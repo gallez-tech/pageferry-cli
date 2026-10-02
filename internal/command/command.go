@@ -503,6 +503,12 @@ func (a *App) collectSite(directory string) (policy.SiteResult, error) {
 	if err != nil {
 		return site, err
 	}
+	if root != directory {
+		site.Warnings = append(site.Warnings, policy.SlidevSourceWarnings(directory)...)
+	} else if filepath.Base(root) == "dist" {
+		site.Warnings = append(site.Warnings, policy.SlidevSourceWarnings(filepath.Dir(root))...)
+	}
+	site.Warnings = uniqueStrings(site.Warnings)
 	for _, skipped := range site.Skipped {
 		fmt.Fprintf(a.errOut, "skipped: %s\n", skipped)
 	}

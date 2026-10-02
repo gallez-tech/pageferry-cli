@@ -142,6 +142,7 @@ func CollectSite(root string) (SiteResult, error) {
 		if file.Path == SiteIndex {
 			result.Title = validation.Title
 			result.Warnings = append(result.Warnings, validation.Warnings...)
+			result.Warnings = append(result.Warnings, SlidevWarnings(result, content)...)
 		}
 	}
 	if !hasIndex {
