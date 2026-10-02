@@ -27,10 +27,14 @@ pageferry list
 
 `pageferry auth login` opens your configured PageFerry host in the browser. Sign in
 and select **Authorize CLI**; the CLI creates and saves an API key named after your
-computer's hostname. Use `--name` to choose another name. The browser must run on
-the same computer as the CLI; login times out after five minutes.
+computer's hostname. Use `--name` to choose another name. Login times out after five
+minutes. If the browser runs on another device, authorize there: the final
+`http://127.0.0.1:…/callback?…` page fails to load on that device, so copy its address and
+paste it into the terminal to finish.
 
-For a VPS or remote terminal, run:
+Over SSH (`SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY` set), `pageferry auth login` uses a
+one-time login code instead; pass `--browser` to open a browser on the remote host anyway.
+To choose the login-code flow explicitly, for example in a container, run:
 
 ```sh
 pageferry auth login --headless

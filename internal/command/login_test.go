@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -116,5 +118,79 @@ func TestBrowserLoginCancellationPreservesCredentials(t *testing.T) {
 	}
 	if app.store.LoadCredentials().APIKey != "pf_previous" {
 		t.Fatal("credentials changed")
+	}
+}
+
+func TestBrowserLoginAcceptsCallbackPastedFromAnotherDevice(t *testing.T) {
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/cli/auth/token" {
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["code"] != "pasted-code" {
+				t.Error("pasted code not exchanged")
+			}
+			fmt.Fprint(w, `{"token":"pf_pasted"}`)
+			return
+		}
+		fmt.Fprint(w, `{"accountName":"Owner","apiKeyName":"seedbox"}`)
+	}))
+	defer apiServer.Close()
+	app, out, errOut := testApp(t, "")
+	reader, writer := io.Pipe()
+	app.in = reader
+	app.openBrowser = func(target string) error {
+		authorization, err := url.Parse(target)
+		if err != nil {
+			return err
+		}
+		callback, _ := url.Parse(authorization.Query().Get("redirect_uri"))
+		go func() {
+			wrong := *callback
+			wrong.RawQuery = url.Values{"code": {"x"}, "state": {"another-login"}}.Encode()
+			fmt.Fprintln(writer, wrong.String())
+			callback.RawQuery = url.Values{"code": {"pasted-code"}, "state": {authorization.Query().Get("state")}}.Encode()
+			fmt.Fprintln(writer, callback.String())
+		}()
+		return errors.New("no browser on this host")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := app.Run(ctx, []string{"auth", "login", "--api-url", apiServer.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if app.store.LoadCredentials().APIKey != "pf_pasted" {
+		t.Fatal("pasted callback did not save the key")
+	}
+	if !strings.Contains(errOut.String(), "not the callback address for this login") || !strings.Contains(out.String(), "paste it here") {
+		t.Fatalf("missing guidance: %s / %s", out.String(), errOut.String())
+	}
+}
+
+func TestLoginUsesLoginCodeOverSSHUnlessBrowserIsForced(t *testing.T) {
+	app, out, errOut := testApp(t, "")
+	app.getenv = func(key string) string {
+		if key == "SSH_CONNECTION" {
+			return "203.0.113.5 52000 198.51.100.7 22"
+		}
+		return ""
+	}
+	app.openBrowser = func(string) error { t.Error("SSH login opened a browser"); return nil }
+	if err := app.Run(context.Background(), []string{"auth", "login", "--api-url", "https://p.example"}); err == nil {
+		t.Fatal("expected an empty login code to fail")
+	}
+	if !strings.Contains(errOut.String(), "SSH session detected") || !strings.Contains(out.String(), "/cli/auth/authorize?") ||
+		!strings.Contains(out.String(), url.QueryEscape("urn:pageferry:cli:headless")) {
+		t.Fatalf("expected a login-code flow: %s / %s", out.String(), errOut.String())
+	}
+
+	opened := false
+	ctx, cancel := context.WithCancel(context.Background())
+	app.openBrowser = func(string) error { opened = true; cancel(); return nil }
+	_ = app.Run(ctx, []string{"auth", "login", "--browser", "--api-url", "https://p.example"})
+	if !opened {
+		t.Fatal("--browser did not open a browser")
+	}
+	if err := app.Run(context.Background(), []string{"auth", "login", "--browser", "--headless"}); err == nil {
+		t.Fatal("conflicting login modes accepted")
 	}
 }
