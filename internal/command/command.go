@@ -27,14 +27,15 @@ import (
 const defaultAPIURL = "https://p.rgf.sh"
 
 type App struct {
-	version string
-	in      io.Reader
-	out     io.Writer
-	errOut  io.Writer
-	store   *state.Store
-	now     func() time.Time
-	getenv  func(string) string
-	build   func(ctx context.Context, dir string, output io.Writer) error
+	version     string
+	in          io.Reader
+	out         io.Writer
+	errOut      io.Writer
+	store       *state.Store
+	now         func() time.Time
+	getenv      func(string) string
+	openBrowser func(string) error
+	build       func(ctx context.Context, dir string, output io.Writer) error
 }
 
 func New(version string, in io.Reader, out, errOut io.Writer) (*App, error) {
@@ -83,7 +84,10 @@ func (a *App) printHelp() {
 
 Usage:
   pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]
-  pageferry auth login [--name <key-name>] [--api-url <url>]
+  pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]
+  pageferry auth start [--name <key-name>] [--api-url <url>]
+  pageferry auth complete <login-code>
+  pageferry auth complete --stdin
   pageferry whoami [--api-url <url>]
   pageferry keys list [--json] [--api-url <url>]
   pageferry keys create [--name <key-name>] [--api-url <url>]
@@ -202,10 +206,14 @@ func (a *App) update(ctx context.Context, args []string) error {
 
 func (a *App) auth(ctx context.Context, args []string) error {
 	if len(args) == 0 || isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry auth <set|login> [arguments]")
+		fmt.Fprintln(a.out, "Usage: pageferry auth <set|login|start|complete> [arguments]")
 		return nil
 	}
 	switch args[0] {
+	case "start":
+		return a.authStart(args[1:])
+	case "complete":
+		return a.authComplete(ctx, args[1:])
 	case "set":
 		if len(args) == 2 && isHelp(args[1]) {
 			fmt.Fprintln(a.out, "Usage: pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]")
@@ -245,15 +253,15 @@ func (a *App) auth(ctx context.Context, args []string) error {
 		return nil
 	case "login":
 		if len(args) == 2 && isHelp(args[1]) {
-			fmt.Fprintln(a.out, "Usage: pageferry auth login [--name <key-name>] [--api-url <url>]")
+			fmt.Fprintln(a.out, "Usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]")
 			return nil
 		}
-		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true})
+		options, positional, err := parseOptions(args[1:], map[string]bool{"api-url": true, "name": true, "manual": false, "headless": false})
 		if err != nil {
 			return err
 		}
 		if len(positional) != 0 {
-			return errors.New("usage: pageferry auth login [--name <key-name>] [--api-url <url>]")
+			return errors.New("usage: pageferry auth login [--name <key-name>] [--api-url <url>] [--headless | --manual]")
 		}
 		if name, ok := options["name"]; ok && strings.TrimSpace(name) == "" {
 			return errors.New("--name must not be empty")
@@ -261,6 +269,17 @@ func (a *App) auth(ctx context.Context, args []string) error {
 		origin, err := a.origin(options["api-url"])
 		if err != nil {
 			return err
+		}
+		_, headless := options["headless"]
+		_, manual := options["manual"]
+		if headless && manual {
+			return errors.New("--headless and --manual cannot be used together")
+		}
+		if headless {
+			return a.headlessLogin(ctx, origin, options["name"])
+		}
+		if !manual {
+			return a.browserLogin(ctx, origin, options["name"])
 		}
 		fmt.Fprintf(a.out, "Open this URL on any device:\n%s/cli/auth\n\nPaste API key: ", origin)
 		scanner := bufio.NewScanner(a.in)

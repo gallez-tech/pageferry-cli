@@ -25,6 +25,50 @@ pageferry upload report.html
 pageferry list
 ```
 
+`pageferry auth login` opens your configured PageFerry host in the browser. Sign in
+and select **Authorize CLI**; the CLI creates and saves an API key named after your
+computer's hostname. Use `--name` to choose another name. The browser must run on
+the same computer as the CLI; login times out after five minutes.
+
+For a VPS or remote terminal, run:
+
+```sh
+pageferry auth login --headless
+```
+
+Open the printed URL on your phone or laptop, sign in, and select **Authorize CLI**.
+Paste the `pf_login_…` code back into the VPS terminal. That code expires after two
+minutes and can be used once, only by the CLI that started login. The CLI creates
+and saves the API key without printing it. No browser or inbound port is required
+on the VPS. Both login modes use the computer's hostname unless `--name` is set.
+
+For agents, use two commands so the agent can hand off the link and resume later:
+
+```sh
+pageferry auth start --name "VPS agent"
+# Open the printed link, authorize, and give the one-time code to the agent.
+pageferry auth complete <login-code>
+pageferry whoami
+pageferry upload report.html
+```
+
+`auth complete --stdin` accepts the code from standard input. A pending request
+expires after five minutes; starting another replaces it. The CLI stores the PKCE
+verifier privately on the initiating machine and removes it after successful
+login. Completion uses the host saved by `auth start`, even if environment settings
+change between commands.
+
+Agents use saved CLI credentials for subsequent commands. Login and publishing
+keep the API key and PKCE verifier out of output; neither needs to be included in prompts,
+agent configuration, or shell arguments. On Unix, the credential and pending-login
+files use mode `0600` inside the `0700` PageFerry directory. This prevents accidental
+sharing with the model; an agent with unrestricted access to the same OS account
+can still read those files. Enforcing isolation requires a separate credential
+broker or sandbox that restricts access to the credential store and broker.
+
+`pageferry auth login --manual` keeps the original API-key copy-and-paste flow for
+servers that do not yet support browser login.
+
 The API key can also be configured non-interactively:
 
 ```sh

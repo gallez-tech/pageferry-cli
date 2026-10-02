@@ -266,7 +266,7 @@ func TestLoginDoesNotReplaceCredentialsOnEmptyInput(t *testing.T) {
 	if err := app.store.SaveCredentials(state.Credentials{APIKey: "existing"}); err != nil {
 		t.Fatal(err)
 	}
-	err := app.Run(context.Background(), []string{"auth", "login"})
+	err := app.Run(context.Background(), []string{"auth", "login", "--manual"})
 	if err == nil || app.store.LoadCredentials().APIKey != "existing" {
 		t.Fatalf("error = %v credentials = %#v", err, app.store.LoadCredentials())
 	}
@@ -488,7 +488,7 @@ func TestLoginNamesTheKey(t *testing.T) {
 	server := keysServer(t, &renamed)
 	defer server.Close()
 	app, out, _ := testApp(t, "pf_saved\n")
-	if err := app.Run(context.Background(), []string{"auth", "login", "--name", "Work laptop", "--api-url", server.URL}); err != nil {
+	if err := app.Run(context.Background(), []string{"auth", "login", "--manual", "--name", "Work laptop", "--api-url", server.URL}); err != nil {
 		t.Fatal(err)
 	}
 	if renamed["key_1"] != "Work laptop" || !strings.Contains(out.String(), "with key Work laptop.") {
