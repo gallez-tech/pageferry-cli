@@ -75,7 +75,7 @@ Given a project directory without `index.html`, PageFerry uses its `dist/` folde
 Slidev-specific checks when `index.html` includes `meta property="slidev:version"`:
 
 - Keep the default `/` base (`npm run build` / `slidev build` without `--base`).
-- With `download: true` in `slides.md`, run `slidev build --download` and ensure `playwright-chromium` is installed so `slidev-exported.pdf` (or `exportFilename`) is in `dist/`.
+- With `download: true` in `slides.md`, run `slidev build --download` and ensure `playwright-chromium` is installed so `slidev-exported.pdf` (or `<exportFilename>.pdf`) is in `dist/`.
 - PageFerry relays presenter state across devices for hosted Slidev builds; `drawings.persist: true` stays browser-local and is **not** synced between devices.
 - Slidev `remote` passwords are not enforced by PageFerry — use `pageferry upload --password` or `--email` for access control.
 - Screen mirror and recording use `getDisplayMedia`; they need HTTPS on the public URL and a user gesture.
