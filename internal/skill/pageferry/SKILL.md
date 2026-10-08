@@ -77,6 +77,16 @@ Return the public URL printed by the command. Reusing the same local path update
 
 Use `--description <text>` when a dashboard summary is useful. Use `--temporary <duration>` for an expiring draft; accepted durations range from `5m` through `30d`. Dedicated `--workers-dev` hosting is not available yet, so do not select it.
 
+## Publish one PDF, image, audio, or video file
+
+PageFerry serves common PDF and media files directly from a stable URL. Use the
+printed URL to share the original file; uploads are limited to 50 MiB.
+
+```sh
+pageferry upload report.pdf
+pageferry upload demo.mp4 --temporary 7d
+```
+
 ## Publish a static site or Slidev deck
 
 A build output directory with `index.html` at its root (for example the `dist/` produced by `npm run build` in a [Slidev](https://sli.dev) project) is published as a whole: every file is served from the draft origin, and extension-less routes such as `/3` or `/presenter/3` fall back to `index.html`. Keep Slidev's default `/` base; do not pass `--base`.

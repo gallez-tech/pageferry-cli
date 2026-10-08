@@ -80,7 +80,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 }
 
 func (a *App) printHelp() {
-	fmt.Fprint(a.out, `PageFerry publishes a local HTML document or static site as a stable public URL.
+	fmt.Fprint(a.out, `PageFerry publishes local HTML, PDF, image, audio, video, or static site files as stable public URLs.
 
 Usage:
   pageferry auth set <api-key> [--name <key-name>] [--api-url <url>]
@@ -107,6 +107,10 @@ Usage:
                           (opencode/codex/cursor → .agents/skills; claude → .claude/skills)
   pageferry update check
   pageferry --version
+
+Direct files:
+  PDF, image, audio, and video files are uploaded as one public file. Common
+  formats include PDF, PNG/JPEG/WebP, MP3/WAV, and MP4/WebM.
 
 Static sites:
   Pass a build output directory (with index.html at its root) to publish every
@@ -160,6 +164,10 @@ func (a *App) validate(args []string) error {
 	content, err := os.ReadFile(absolute)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", absolute, err)
+	}
+	if isDirectUploadFile(filepath.Base(absolute)) {
+		fmt.Fprintf(a.out, "Valid PageFerry file: %s\n", absolute)
+		return nil
 	}
 	validation := policy.ValidateHTML(content)
 	for _, warning := range validation.Warnings {
@@ -409,19 +417,21 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", absolute, err)
 		}
-		validation := policy.ValidateHTML(content)
-		if len(validation.Errors) > 0 {
-			return fmt.Errorf("HTML validation failed:\n  - %s", strings.Join(validation.Errors, "\n  - "))
-		}
-		warnings = validation.Warnings
 		filename = filepath.Base(absolute)
 		if suppliedName, supplied := options["name"]; supplied {
 			filename = suppliedName
 		}
-		var filenameErrors []string
-		filename, filenameErrors = policy.ValidateFilename(filename)
-		if err := policy.FilenameError(filenameErrors); err != nil {
-			return err
+		if !isDirectUploadFile(filename) {
+			validation := policy.ValidateHTML(content)
+			if len(validation.Errors) > 0 {
+				return fmt.Errorf("HTML validation failed:\n  - %s", strings.Join(validation.Errors, "\n  - "))
+			}
+			warnings = validation.Warnings
+			var filenameErrors []string
+			filename, filenameErrors = policy.ValidateFilename(filename)
+			if err := policy.FilenameError(filenameErrors); err != nil {
+				return err
+			}
 		}
 	}
 	drafts := a.store.LoadDrafts()
@@ -470,7 +480,12 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	} else {
 		hash := sha256.Sum256(content)
 		request.Metadata = provenance.Collect(ctx, absolute, a.version, hex.EncodeToString(hash[:]))
-		response, err = client.Upload(ctx, request)
+		if isDirectUploadFile(filename) {
+			fmt.Fprintf(a.errOut, "Uploading file %s (%s)\n", filename, humanBytes(int64(len(content))))
+			response, err = client.UploadFile(ctx, request, api.SiteFile{Path: filename, Absolute: absolute})
+		} else {
+			response, err = client.Upload(ctx, request)
+		}
 	}
 	if err != nil {
 		return err
@@ -510,6 +525,16 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		fmt.Fprintf(a.errOut, "warning: %s\n", warning)
 	}
 	return nil
+}
+
+func isDirectUploadFile(filename string) bool {
+	allowed := map[string]bool{
+		"pdf": true, "png": true, "jpg": true, "jpeg": true, "gif": true, "webp": true, "avif": true, "svg": true, "bmp": true, "tif": true, "tiff": true,
+		"mp3": true, "wav": true, "ogg": true, "oga": true, "m4a": true, "aac": true, "flac": true, "opus": true,
+		"mp4": true, "webm": true, "mov": true, "m4v": true, "mpeg": true, "mpg": true, "avi": true, "ogv": true,
+	}
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+	return allowed[ext]
 }
 
 // collectSite resolves the directory to publish: the directory itself when it

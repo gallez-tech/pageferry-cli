@@ -134,6 +134,18 @@ missing or zoom-blocking viewport, a missing `<html lang>`, fixed pixel widths, 
 controls below 16px (iOS Safari zooms on focus), and `100vh` without an `svh`/`dvh`
 alternative.
 
+## Direct file uploads
+
+Upload a PDF, image, audio, or video file directly; PageFerry serves it from its
+own public URL with its media content type. Common formats include PDF, PNG,
+JPEG, WebP, SVG, MP3, WAV, MP4, and WebM. Direct files share the 50 MiB upload
+limit with static site bundles and can use the same access and expiry options.
+
+```sh
+pageferry upload report.pdf
+pageferry upload demo.mp4 --temporary 7d
+```
+
 Publishing requires a valid key for the server's configured owner (or its operator
 bootstrap key). Drafts are public by default. Protect one and store backend-only values:
 

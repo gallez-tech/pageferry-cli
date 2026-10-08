@@ -188,6 +188,43 @@ func (c *Client) UploadSite(ctx context.Context, request UploadRequest, files []
 	return response, err
 }
 
+// UploadFile publishes one PDF, image, audio, or video file as a standalone draft.
+func (c *Client) UploadFile(ctx context.Context, request UploadRequest, file SiteFile) (UploadResponse, error) {
+	request.HTML, request.Filename, request.Files = "", file.Path, nil
+	metadata, err := json.Marshal(struct {
+		UploadRequest
+		DirectFile bool `json:"directFile"`
+	}{UploadRequest: request, DirectFile: true})
+	if err != nil {
+		return UploadResponse{}, err
+	}
+	reader, writer := io.Pipe()
+	form := multipart.NewWriter(writer)
+	go func() {
+		writeErr := form.WriteField("metadata", string(metadata))
+		if writeErr == nil {
+			var part io.Writer
+			part, writeErr = form.CreateFormFile("file", path.Base(file.Path))
+			if writeErr == nil {
+				var source *os.File
+				source, writeErr = os.Open(file.Absolute)
+				if writeErr == nil {
+					_, writeErr = io.Copy(part, source)
+					_ = source.Close()
+				}
+			}
+		}
+		if writeErr == nil {
+			writeErr = form.Close()
+		}
+		writer.CloseWithError(writeErr)
+	}()
+	var response UploadResponse
+	err = c.send(ctx, http.MethodPost, "/api/uploads", reader, form.FormDataContentType(), 10*time.Minute, &response)
+	_ = reader.Close()
+	return response, err
+}
+
 func writeSiteForm(form *multipart.Writer, metadata []byte, files []SiteFile) error {
 	if err := form.WriteField("metadata", string(metadata)); err != nil {
 		return err
