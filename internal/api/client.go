@@ -31,17 +31,34 @@ type Identity struct {
 }
 
 type UploadRequest struct {
-	HTML             string            `json:"html,omitempty"`
-	Filename         string            `json:"filename,omitempty"`
-	Files            []string          `json:"files,omitempty"`
-	DraftID          string            `json:"draftId,omitempty"`
-	Description      *string           `json:"description,omitempty"`
-	HostingMode      string            `json:"hostingMode,omitempty"`
-	ExpiresInSeconds *int64            `json:"expiresInSeconds,omitempty"`
-	Metadata         map[string]any    `json:"metadata,omitempty"`
-	Access           *UploadAccess     `json:"access,omitempty"`
-	Env              map[string]string `json:"env,omitempty"`
-	Secrets          map[string]string `json:"secrets,omitempty"`
+	HTML             string               `json:"html,omitempty"`
+	Filename         string               `json:"filename,omitempty"`
+	AltText          string               `json:"altText,omitempty"`
+	Transcript       string               `json:"transcript,omitempty"`
+	Preview          *LinkPreviewMetadata `json:"preview,omitempty"`
+	Files            []string             `json:"files,omitempty"`
+	DraftID          string               `json:"draftId,omitempty"`
+	Description      *string              `json:"description,omitempty"`
+	HostingMode      string               `json:"hostingMode,omitempty"`
+	ExpiresInSeconds *int64               `json:"expiresInSeconds,omitempty"`
+	Metadata         map[string]any       `json:"metadata,omitempty"`
+	Access           *UploadAccess        `json:"access,omitempty"`
+	Env              map[string]string    `json:"env,omitempty"`
+	Secrets          map[string]string    `json:"secrets,omitempty"`
+}
+
+type LinkPreviewMetadata struct {
+	Title          string            `json:"title,omitempty"`
+	Description    string            `json:"description,omitempty"`
+	Image          string            `json:"image,omitempty"`
+	ImageAlt       string            `json:"imageAlt,omitempty"`
+	CanonicalURL   string            `json:"canonicalUrl,omitempty"`
+	SiteName       string            `json:"siteName,omitempty"`
+	Type           string            `json:"type,omitempty"`
+	TwitterCard    string            `json:"twitterCard,omitempty"`
+	TwitterSite    string            `json:"twitterSite,omitempty"`
+	TwitterCreator string            `json:"twitterCreator,omitempty"`
+	Extra          map[string]string `json:"extra,omitempty"`
 }
 
 type UploadAccess struct {

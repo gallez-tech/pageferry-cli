@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gallez-tech/pageferry-cli/internal/api"
 	"github.com/gallez-tech/pageferry-cli/internal/policy"
@@ -351,10 +352,10 @@ func (a *App) whoami(ctx context.Context, args []string) error {
 
 func (a *App) upload(ctx context.Context, args []string) error {
 	if len(args) == 1 && isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>] [--build] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
+		fmt.Fprintln(a.out, "Usage: pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>] [--alt-text <text>] [--transcript-file <path>] [--preview-title <text>] [--preview-description <text>] [--preview-image <url|bundle-path>] [--preview-image-alt <text>] [--canonical-url <url>] [--site-name <text>] [--preview-type <type>] [--twitter-card <type>] [--twitter-site <handle>] [--twitter-creator <handle>] [--preview-meta <og:key=value>] [--build] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
 		return nil
 	}
-	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false, "build": false}
+	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "alt-text": true, "transcript-file": true, "preview-title": true, "preview-description": true, "preview-image": true, "preview-image-alt": true, "canonical-url": true, "site-name": true, "preview-type": true, "twitter-card": true, "twitter-site": true, "twitter-creator": true, "preview-meta": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false, "build": false}
 	options, positional, err := parseOptions(args, spec)
 	if err != nil {
 		return err
@@ -382,6 +383,12 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	}
 	_, build := options["build"]
 	if info.IsDir() {
+		if _, supplied := options["alt-text"]; supplied {
+			return errors.New("--alt-text applies to direct image uploads only")
+		}
+		if _, supplied := options["transcript-file"]; supplied {
+			return errors.New("--transcript-file applies to direct audio or video uploads only")
+		}
 		if _, supplied := options["name"]; supplied {
 			return errors.New("--name applies to single HTML files only")
 		}
@@ -440,6 +447,54 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		draftID = drafts[absolute].DraftID
 	}
 	request := api.UploadRequest{HTML: string(content), Filename: filename, DraftID: draftID, HostingMode: "domain"}
+	if altText, supplied := options["alt-text"]; supplied {
+		if !isImageUploadFile(filename) {
+			return errors.New("--alt-text applies to image files only")
+		}
+		altText = strings.TrimSpace(altText)
+		if altText == "" || len([]rune(altText)) > 1000 {
+			return errors.New("--alt-text must contain 1 to 1000 characters")
+		}
+		request.AltText = altText
+	}
+	if transcriptPath, supplied := options["transcript-file"]; supplied {
+		if !isAudioVideoUploadFile(filename) {
+			return errors.New("--transcript-file applies to audio or video files only")
+		}
+		transcriptBytes, readErr := os.ReadFile(transcriptPath)
+		if readErr != nil {
+			return fmt.Errorf("read transcript %s: %w", transcriptPath, readErr)
+		}
+		if !utf8.Valid(transcriptBytes) {
+			return errors.New("transcript file must be valid UTF-8")
+		}
+		request.Transcript = strings.TrimSpace(string(transcriptBytes))
+		if request.Transcript == "" || len([]rune(request.Transcript)) > 200000 {
+			return errors.New("transcript must contain 1 to 200000 characters")
+		}
+	}
+	preview := &api.LinkPreviewMetadata{
+		Title: options["preview-title"], Description: options["preview-description"], Image: options["preview-image"],
+		ImageAlt: options["preview-image-alt"], CanonicalURL: options["canonical-url"], SiteName: options["site-name"],
+		Type: options["preview-type"], TwitterCard: options["twitter-card"], TwitterSite: options["twitter-site"], TwitterCreator: options["twitter-creator"],
+	}
+	for _, item := range optionValues(options["preview-meta"]) {
+		key, value, ok := strings.Cut(item, "=")
+		key = strings.ToLower(strings.TrimSpace(key))
+		if !ok || (!strings.HasPrefix(key, "og:") && !strings.HasPrefix(key, "twitter:")) || strings.TrimSpace(value) == "" {
+			return errors.New("--preview-meta must use og:key=value or twitter:key=value")
+		}
+		if preview.Extra == nil {
+			preview.Extra = map[string]string{}
+		}
+		if _, exists := preview.Extra[key]; exists {
+			return fmt.Errorf("duplicate --preview-meta key %s", key)
+		}
+		preview.Extra[key] = strings.TrimSpace(value)
+	}
+	if len(preview.Extra) > 0 || preview.Title != "" || preview.Description != "" || preview.Image != "" || preview.ImageAlt != "" || preview.CanonicalURL != "" || preview.SiteName != "" || preview.Type != "" || preview.TwitterCard != "" || preview.TwitterSite != "" || preview.TwitterCreator != "" {
+		request.Preview = preview
+	}
 	if access != nil {
 		request.Access = &api.UploadAccess{Mode: access.Mode, Password: access.Password, Emails: access.Emails}
 	}
@@ -535,6 +590,24 @@ func isDirectUploadFile(filename string) bool {
 	}
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
 	return allowed[ext]
+}
+
+func isImageUploadFile(filename string) bool {
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+	switch ext {
+	case "png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "bmp", "tif", "tiff":
+		return true
+	}
+	return false
+}
+
+func isAudioVideoUploadFile(filename string) bool {
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+	switch ext {
+	case "mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus", "mp4", "webm", "mov", "m4v", "mpeg", "mpg", "avi", "ogv":
+		return true
+	}
+	return false
 }
 
 // collectSite resolves the directory to publish: the directory itself when it

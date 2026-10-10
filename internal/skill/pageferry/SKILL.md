@@ -1,6 +1,6 @@
 ---
 name: pageferry
-description: Publish safe static HTML documents or static site builds (such as Slidev decks) with PageFerry and retrieve PageFerry draft URLs. Use when sharing a plan, proposal, report, brief, slide deck, or other HTML artifact through PageFerry, or when the user supplies a PageFerry URL.
+description: Publish safe HTML documents, static site builds, or PDF/image/audio/video files with PageFerry and retrieve shareable draft URLs. Use when sharing a plan, report, presentation, podcast, video, image, or other artifact through PageFerry, or when the user supplies a PageFerry URL.
 ---
 
 # PageFerry
@@ -79,8 +79,21 @@ Use `--description <text>` when a dashboard summary is useful. Use `--temporary 
 
 ## Publish one PDF, image, audio, or video file
 
-PageFerry serves common PDF and media files directly from a stable URL. Use the
-printed URL to share the original file; uploads are limited to 50 MiB.
+PageFerry creates a share page with media playback and sharing actions, while
+the printed raw URL serves the original file. Uploads are limited to 50 MiB.
+Use the **Public URL** when sharing in chats; the **Raw URL** bypasses the share
+page and its preview metadata. Social preview crawlers need a public draft, so
+password-protected and email-restricted drafts show their access page instead.
+The share page has WhatsApp and Teams share actions, a system share option, and
+a Discord action that copies the direct media URL for Discord's native media embed.
+Use `--preview-title`, `--preview-description`, `--preview-image`,
+`--preview-image-alt`, `--canonical-url`, `--site-name`, `--preview-type`,
+`--twitter-card`, `--twitter-site`, `--twitter-creator`, and repeatable
+`--preview-meta og:key=value` to set share-preview defaults. Existing Open Graph,
+Twitter Card, description, and canonical tags in each HTML page override those
+defaults. A site bundle may use an image path inside the bundle; a standalone upload
+needs an absolute HTTP(S) preview image URL. Social crawlers must be able to fetch
+the shared page and image, and platforms keep their own preview caches.
 
 ```sh
 pageferry upload report.pdf

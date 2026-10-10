@@ -136,15 +136,55 @@ alternative.
 
 ## Direct file uploads
 
-Upload a PDF, image, audio, or video file directly; PageFerry serves it from its
-own public URL with its media content type. Common formats include PDF, PNG,
-JPEG, WebP, SVG, MP3, WAV, MP4, and WebM. Direct files share the 50 MiB upload
-limit with static site bundles and can use the same access and expiry options.
+Upload a PDF, image, audio, or video file directly. PageFerry provides a share
+page with playback, download, and WhatsApp/Teams sharing actions; the raw URL
+serves the original media with byte-range support for seeking. The share page's
+Discord action copies the direct media URL so Discord can use its native embed.
+Common formats
+include PDF, PNG, JPEG, WebP, SVG, MP3, WAV, MP4, and WebM. Direct files share
+the 50 MiB upload limit with static site bundles and can use the same access
+and expiry options.
 
 ```sh
 pageferry upload report.pdf
 pageferry upload demo.mp4 --temporary 7d
+pageferry upload cover.jpg --alt-text "A red bicycle beside the canal"
+pageferry upload morning-digest.mp3 --transcript-file morning-digest.txt
 ```
+
+Use `--alt-text` for image descriptions and `--transcript-file` to attach a UTF-8
+transcript to audio or video. The transcript is shown on the share page; PageFerry
+does not generate transcripts automatically.
+
+### Link previews
+
+Set default preview metadata on HTML pages, site bundles, or standalone media:
+
+```sh
+pageferry upload dist \
+  --preview-title "Acme product launch" \
+  --preview-description "See what we built." \
+  --preview-image assets/share-card.jpg \
+  --preview-image-alt "The Acme product on a blue background" \
+  --site-name Acme \
+  --preview-type article \
+  --canonical-url https://acme.example/launch \
+  --twitter-site @acme \
+  --preview-meta og:locale=en_US
+```
+
+For a site bundle, `--preview-image` may be an image path inside the bundle or an
+absolute HTTP(S) URL. For a standalone HTML/media upload, use an absolute HTTP(S)
+image URL. The image must be publicly fetchable by social crawlers. Existing
+per-page metadata in the HTML (including `og:*`, `twitter:*`, the description, and
+canonical link) takes precedence over upload defaults. Missing values use the
+upload settings, then the page title/draft description and PageFerry defaults.
+PageFerry emits these tags in the initial HTML response; it does not rely on
+JavaScript. Use a hosted public URL for sharing: files on your computer and
+password/email protected drafts are not readable by preview crawlers. Platforms
+cache previews independently, and their inspectors may be needed to refresh them.
+See [platform metadata research](../pageferry-server/docs/research/link-preview-metadata.md)
+for documented platform constraints and behavior PageFerry cannot guarantee.
 
 Publishing requires a valid key for the server's configured owner (or its operator
 bootstrap key). Drafts are public by default. Protect one and store backend-only values:

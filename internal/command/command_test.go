@@ -81,6 +81,30 @@ func TestUploadCreatesThenUsesSavedMapping(t *testing.T) {
 	}
 }
 
+func TestUploadSendsCustomLinkPreviewMetadata(t *testing.T) {
+	var uploaded api.UploadRequest
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&uploaded); err != nil {
+			t.Fatal(err)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{"draftId": "preview12345", "versionNumber": 1, "publicUrl": "https://p-preview12345.rgf.sh/page.html", "rawUrl": "https://p-preview12345.rgf.sh/raw", "versionUrl": "https://p-preview12345.rgf.sh/v/1/page.html", "hostingMode": "domain", "warnings": []string{}})
+	}))
+	defer server.Close()
+	app, _, _ := testApp(t, "")
+	_ = app.store.SaveConfig(state.Config{APIURL: server.URL})
+	_ = app.store.SaveCredentials(state.Credentials{APIKey: "pf_saved"})
+	file := filepath.Join(t.TempDir(), "page.html")
+	_ = os.WriteFile(file, []byte("<!doctype html><title>Page</title>"), 0o644)
+	err := app.Run(context.Background(), []string{"upload", file, "--preview-title", "Launch", "--preview-description", "A new product", "--preview-image", "https://example.com/card.png", "--preview-image-alt", "Product cover", "--canonical-url", "https://example.com/launch", "--site-name", "Acme", "--preview-type", "article", "--twitter-card", "summary_large_image", "--twitter-site", "@acme", "--preview-meta", "og:locale=en_US"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploaded.Preview == nil || uploaded.Preview.Title != "Launch" || uploaded.Preview.CanonicalURL != "https://example.com/launch" || uploaded.Preview.Extra["og:locale"] != "en_US" {
+		t.Fatalf("preview metadata = %#v", uploaded.Preview)
+	}
+}
+
 func TestUploadRequiresKeyBeforeReading(t *testing.T) {
 	app, _, _ := testApp(t, "")
 	file := filepath.Join(t.TempDir(), "report.html")
