@@ -1,0 +1,8 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Viewport disables zooming (user-scalable=no or maximum-scale below 5); readers cannot zoom in.",
+    "Viewport lacks initial-scale=1; iOS Safari can stay zoomed out after rotation."
+  ]
+}

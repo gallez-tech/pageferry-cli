@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "CSS sets a fixed width of 600px or more; the page will scroll sideways on phones. Prefer max-width or relative units."
+  ]
+}

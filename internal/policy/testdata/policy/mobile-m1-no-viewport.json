@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "No <meta name=\"viewport\"> found; phones will render the page at desktop width. Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">."
+  ]
+}

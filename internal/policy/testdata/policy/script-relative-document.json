@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Relative script paths do not resolve in a single-file draft; publish a directory instead."
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "file: URLs point at the viewer's own disk and will not work."
+  ]
+}

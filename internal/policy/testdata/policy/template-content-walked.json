@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "<object>, <embed> and <applet> content will not load: the draft CSP blocks plugins."
+  ]
+}

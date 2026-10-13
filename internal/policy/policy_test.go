@@ -1,6 +1,9 @@
 package policy
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -43,49 +46,19 @@ func TestValidateHTMLAcceptsRealisticAlpineAndHTMX(t *testing.T) {
 	}
 }
 
-func TestValidateHTMLAcceptsEverySupportedScriptType(t *testing.T) {
-	for _, typ := range []string{"", "module", "text/javascript", "application/javascript"} {
-		attribute := ""
-		if typ != "" {
-			attribute = ` type="` + typ + `"`
-		}
-		result := ValidateHTML([]byte(`<title>Scripts</title><script` + attribute + ` src="https://cdn.example/app.js"></script>`))
-		if len(result.Errors) != 0 {
-			t.Errorf("type %q: unexpected errors: %v", typ, result.Errors)
-		}
+func TestValidateHTMLRemovedRulesProduceNothing(t *testing.T) {
+	result := ValidateHTML([]byte(`<!doctype html><html lang="en"><head><title>x</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>main { scroll-behavior: smooth; background: url(javascript:x) }</style></head><body><iframe srcdoc="a" src="https://example.com"></iframe><a href="javascript:void(0)" onclick="x()">x</a><script type="application/ld+json">{}</script></body></html>`))
+	if len(result.Errors) != 0 || len(result.Warnings) != 0 {
+		t.Fatalf("errors = %v, warnings = %v", result.Errors, result.Warnings)
 	}
 }
 
-func TestValidateHTMLRejectsDangerousContentAndDeduplicates(t *testing.T) {
-	result := ValidateHTML([]byte(`<iframe srcdoc="unsafe"></iframe><object></object><embed><applet></applet><base href="https://example.com"><a href="java script:alert(1)" onclick="x()">x</a><div style="behavior : url(x)"></div><style>x{background:url( javascript:alert(1))}</style><script src="x.js"></script><script src="http://example.com/y.js"></script><script type="application/ld+json">{}</script><meta http-equiv="refresh">`))
-	want := []string{
-		"Blocked <iframe> tag found.",
-		"Blocked <object> tag found.",
-		"Blocked <embed> tag found.",
-		"Blocked <applet> tag found.",
-		"Blocked <base> tag found.",
-		`Blocked "srcdoc" attribute found.`,
-		`Blocked inline event handler attribute "onclick" found.`,
-		`Blocked unsafe URL in "href" attribute.`,
-		"Blocked unsafe inline CSS.",
-		"External script sources must use HTTPS.",
-		`Unsupported script type "application/ld+json" found.`,
-		"Blocked meta refresh tag found.",
+func TestValidateHTMLWarnsAboutContentThatWillNotWorkAndDeduplicates(t *testing.T) {
+	result := ValidateHTML([]byte(`<!doctype html><html lang="en"><head><title>x</title><meta name="viewport" content="width=device-width, initial-scale=1"><base href="https://example.com"><meta http-equiv="refresh" content="5"></head><body><object></object><embed><applet></applet><a href="file:///a">a</a><a href="FILE:///b">b</a><script src="x.js"></script><script src="http://example.com/y.js"></script><script src="data:text/javascript,1"></script></body></html>`))
+	if len(result.Errors) != 0 {
+		t.Fatalf("errors = %v", result.Errors)
 	}
-	for _, expected := range want {
-		if !contains(result.Errors, expected) {
-			t.Errorf("missing %q in %v", expected, result.Errors)
-		}
-	}
-	count := 0
-	for _, value := range result.Errors {
-		if value == "External script sources must use HTTPS." {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Errorf("external script error appeared %d times", count)
-	}
+	assertWarnings(t, result, WarningBase, WarningMetaRefresh, WarningPlugins, WarningFileURL, WarningRelativeScript, WarningInsecureScript)
 }
 
 func TestValidateHTMLPreservesSizeLimit(t *testing.T) {
@@ -115,16 +88,59 @@ func contains(values []string, target string) bool {
 }
 
 func TestRelativeScriptsOnlyAllowedForSites(t *testing.T) {
-	document := []byte(`<title>x</title><script type="module" src="/assets/index-abc.js"></script>`)
-	if len(ValidateHTML(document).Errors) == 0 {
-		t.Fatal("single documents must not load relative scripts")
+	document := []byte(`<!doctype html><html lang="en"><title>x</title><meta name="viewport" content="width=device-width, initial-scale=1"><script type="module" src="/assets/index-abc.js"></script>`)
+	assertWarnings(t, ValidateHTML(document), WarningRelativeScript)
+	assertWarnings(t, ValidateHTMLWithOptions(document, HTMLOptions{AllowRelativeScripts: true}))
+	insecure := []byte(`<!doctype html><html lang="en"><title>x</title><meta name="viewport" content="width=device-width, initial-scale=1"><script src="http://example.com/x.js"></script>`)
+	assertWarnings(t, ValidateHTMLWithOptions(insecure, HTMLOptions{AllowRelativeScripts: true}), WarningInsecureScript)
+}
+
+func TestValidateHTMLFixtures(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("testdata", "policy", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no fixtures found: %v", err)
 	}
-	if errors := ValidateHTMLWithOptions(document, HTMLOptions{AllowRelativeScripts: true}).Errors; len(errors) != 0 {
-		t.Fatalf("errors = %v", errors)
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		t.Run(name, func(t *testing.T) {
+			content, err := os.ReadFile(strings.TrimSuffix(path, ".json") + ".html")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fixture struct {
+				Mode     string   `json:"mode"`
+				Errors   []string `json:"errors"`
+				Warnings []string `json:"warnings"`
+			}
+			if err := json.Unmarshal(raw, &fixture); err != nil {
+				t.Fatal(err)
+			}
+			options := HTMLOptions{}
+			switch fixture.Mode {
+			case "document":
+			case "site":
+				options.AllowRelativeScripts = true
+			default:
+				t.Fatalf("unknown mode %q", fixture.Mode)
+			}
+			result := ValidateHTMLWithOptions(content, options)
+			assertSameSet(t, "errors", result.Errors, fixture.Errors)
+			assertSameSet(t, "warnings", result.Warnings, fixture.Warnings)
+		})
 	}
-	insecure := []byte(`<title>x</title><script src="http://example.com/x.js"></script>`)
-	if len(ValidateHTMLWithOptions(insecure, HTMLOptions{AllowRelativeScripts: true}).Errors) == 0 {
-		t.Fatal("http scripts must stay blocked")
+}
+
+func assertSameSet(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	got, want = slices.Clone(got), slices.Clone(want)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("%s = %q, want %q", label, got, want)
 	}
 }
 

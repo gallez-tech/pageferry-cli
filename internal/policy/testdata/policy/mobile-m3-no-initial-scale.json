@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Viewport lacks initial-scale=1; iOS Safari can stay zoomed out after rotation."
+  ]
+}

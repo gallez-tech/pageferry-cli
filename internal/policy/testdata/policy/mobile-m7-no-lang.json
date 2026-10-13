@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "No <html lang> attribute found; screen readers and translation cannot detect the document language."
+  ]
+}

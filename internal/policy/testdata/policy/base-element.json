@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "<base> is ignored: the draft CSP sets base-uri 'none'."
+  ]
+}

@@ -251,11 +251,11 @@ func TestValidateRunsOfflineAndUsesPublicFilename(t *testing.T) {
 func TestValidateReportsWarningsAndPolicyErrors(t *testing.T) {
 	app, _, errOut := testApp(t, "")
 	file := filepath.Join(t.TempDir(), "unsafe.html")
-	if err := os.WriteFile(file, []byte(`<iframe src="https://example.com"></iframe>`), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(strings.Repeat("<div>", 520)+"x"+strings.Repeat("</div>", 520)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	err := app.Run(context.Background(), []string{"validate", file})
-	if err == nil || !strings.Contains(err.Error(), "Blocked <iframe> tag found.") {
+	if err == nil || !strings.Contains(err.Error(), "HTML is nested more than 512 levels deep.") {
 		t.Fatalf("error = %v", err)
 	}
 	if !strings.Contains(errOut.String(), "No <title> found") || !strings.Contains(errOut.String(), `No <meta name="viewport"> found`) {
@@ -414,8 +414,8 @@ func TestValidateDirectoryRejectsUnsafeSites(t *testing.T) {
 	}
 
 	unsafe := t.TempDir()
-	writeFiles(t, unsafe, map[string]string{"index.html": slidevIndex, "embed.html": "<title>x</title><iframe></iframe>"})
-	if err := app.Run(context.Background(), []string{"validate", unsafe}); err == nil || !strings.Contains(err.Error(), "embed.html: Blocked <iframe> tag found.") {
+	writeFiles(t, unsafe, map[string]string{"index.html": slidevIndex, "deep.html": "<title>x</title>" + strings.Repeat("<div>", 520) + strings.Repeat("</div>", 520)})
+	if err := app.Run(context.Background(), []string{"validate", unsafe}); err == nil || !strings.Contains(err.Error(), "deep.html: HTML is nested more than 512 levels deep.") {
 		t.Fatalf("error = %v", err)
 	}
 }

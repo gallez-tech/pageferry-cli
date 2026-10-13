@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Form controls use a font-size below 16px; iOS Safari zooms in when they are focused."
+  ]
+}

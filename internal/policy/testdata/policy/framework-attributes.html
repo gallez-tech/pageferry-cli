@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fixture</title>
+</head>
+<body>
+<div x-data="{ open: false }">
+<button @click="open = !open" :class="{ active: open }" x-on:keydown.escape="open = false">Toggle</button>
+<div x-show="open" hx-get="/partial" hx-trigger="load" hx-swap="innerHTML">Panel</div>
+</div>
+</body>
+</html>

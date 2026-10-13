@@ -15,15 +15,21 @@ import (
 
 const MaxHTMLBytes = 512 * 1024
 
-var blockedTags = map[string]bool{
-	"iframe": true, "object": true, "embed": true,
-	"applet": true, "base": true,
-}
+var pluginTags = map[string]bool{"object": true, "embed": true, "applet": true}
 
 var urlAttributes = map[string]bool{
 	"href": true, "src": true, "action": true, "formaction": true,
-	"poster": true, "srcdoc": true, "xlink:href": true,
+	"poster": true, "xlink:href": true,
 }
+
+const (
+	WarningPlugins        = "<object>, <embed> and <applet> content will not load: the draft CSP blocks plugins."
+	WarningBase           = "<base> is ignored: the draft CSP sets base-uri 'none'."
+	WarningRelativeScript = "Relative script paths do not resolve in a single-file draft; publish a directory instead."
+	WarningInsecureScript = "Scripts must load over https://; the draft CSP blocks other script sources."
+	WarningFileURL        = "file: URLs point at the viewer's own disk and will not work."
+	WarningMetaRefresh    = "Meta refresh redirects viewers automatically."
+)
 
 type HTMLResult struct {
 	Title              string
@@ -56,13 +62,14 @@ func ValidateHTMLWithOptions(content []byte, options HTMLOptions) HTMLResult {
 	if len(content) > MaxHTMLBytes {
 		result.Errors = append(result.Errors, fmt.Sprintf("HTML document is %d bytes; maximum is %d bytes.", len(content), MaxHTMLBytes))
 	}
-	document, err := html.Parse(bytes.NewReader(content))
+	document, err := html.ParseWithOptions(bytes.NewReader(content), html.ParseOptionEnableScripting(false))
 	if err != nil {
 		result.Errors = append(result.Errors, "HTML document could not be parsed.")
 		return result
 	}
 	hosts := make(map[string]bool)
 	mobile := mobileSignals{}
+	var warnings []string
 	stack := []nodeDepth{{document, 0}}
 	for len(stack) > 0 {
 		current := stack[len(stack)-1]
@@ -74,32 +81,28 @@ func ValidateHTMLWithOptions(content []byte, options HTMLOptions) HTMLResult {
 		node := current.node
 		if node.Type == html.ElementNode {
 			tag := strings.ToLower(node.Data)
-			if blockedTags[tag] {
-				result.Errors = append(result.Errors, fmt.Sprintf("Blocked <%s> tag found.", tag))
+			if pluginTags[tag] {
+				warnings = append(warnings, WarningPlugins)
+			}
+			if tag == "base" {
+				warnings = append(warnings, WarningBase)
 			}
 			attrs := attributes(node)
 			if tag == "script" {
 				result.HasInlineScript = true
-				if src, ok := attrs["src"]; ok && !isHTTPSURL(src) && !(options.AllowRelativeScripts && isRelativeURL(src)) {
-					result.Errors = append(result.Errors, "External script sources must use HTTPS.")
-				}
-				typ := strings.ToLower(strings.TrimSpace(attrs["type"]))
-				if typ != "" && typ != "text/javascript" && typ != "application/javascript" && typ != "module" {
-					result.Errors = append(result.Errors, fmt.Sprintf("Unsupported script type %q found.", typ))
+				if src, ok := attrs["src"]; ok && !isHTTPSURL(src) {
+					if isRelativeURL(src) {
+						if !options.AllowRelativeScripts {
+							warnings = append(warnings, WarningRelativeScript)
+						}
+					} else {
+						warnings = append(warnings, WarningInsecureScript)
+					}
 				}
 			}
 			for name, value := range attrs {
-				if strings.HasPrefix(name, "on") {
-					result.Errors = append(result.Errors, fmt.Sprintf("Blocked inline event handler attribute %q found.", name))
-				}
-				if name == "srcdoc" {
-					result.Errors = append(result.Errors, "Blocked \"srcdoc\" attribute found.")
-				}
-				if urlAttributes[name] && unsafeURL(value) {
-					result.Errors = append(result.Errors, fmt.Sprintf("Blocked unsafe URL in %q attribute.", name))
-				}
-				if name == "style" && unsafeCSS(value) {
-					result.Errors = append(result.Errors, "Blocked unsafe inline CSS.")
+				if urlAttributes[name] && isFileURL(value) {
+					warnings = append(warnings, WarningFileURL)
 				}
 				if name == "style" {
 					mobile.css = append(mobile.css, value)
@@ -113,16 +116,13 @@ func ValidateHTMLWithOptions(content []byte, options HTMLOptions) HTMLResult {
 			}
 			if tag == "style" {
 				css := textContent(node)
-				if unsafeCSS(css) {
-					result.Errors = append(result.Errors, "Blocked unsafe inline CSS.")
-				}
 				mobile.css = append(mobile.css, css)
 				if hasSmallFormControlRule(css) {
 					mobile.smallFormControlFont = true
 				}
 			}
 			if tag == "meta" && strings.EqualFold(strings.TrimSpace(attrs["http-equiv"]), "refresh") {
-				result.Errors = append(result.Errors, "Blocked meta refresh tag found.")
+				warnings = append(warnings, WarningMetaRefresh)
 			}
 			if tag == "meta" && strings.EqualFold(strings.TrimSpace(attrs["name"]), "viewport") {
 				mobile.viewports = append(mobile.viewports, attrs["content"])
@@ -143,6 +143,7 @@ func ValidateHTMLWithOptions(content []byte, options HTMLOptions) HTMLResult {
 	if result.Title == "" {
 		result.Warnings = append(result.Warnings, "No <title> found; PageFerry will use a generic title.")
 	}
+	result.Warnings = append(result.Warnings, warnings...)
 	result.Warnings = append(result.Warnings, mobileWarnings(mobile)...)
 	result.Errors = unique(result.Errors)
 	result.Warnings = unique(result.Warnings)
@@ -177,6 +178,7 @@ const (
 )
 
 var (
+	cssAtRulePattern      = regexp.MustCompile(`@[\w-]+[^{};]*`)
 	cssCommentPattern     = regexp.MustCompile(`/\*[\s\S]*?\*/`)
 	fixedWidthPattern     = regexp.MustCompile(`(?i)(?:^|[\s;{])(?:min-)?width\s*:\s*(\d+(?:\.\d+)?)px`)
 	cssRulePattern        = regexp.MustCompile(`([^{}]+)\{([^{}]*)\}`)
@@ -231,6 +233,8 @@ func parseViewport(content string) map[string]string {
 }
 
 func hasFixedWidth(css string) bool {
+	// At-rule preludes such as "@media ( min-width: 700px )" are conditions, not declarations.
+	css = cssAtRulePattern.ReplaceAllString(css, "")
 	for _, match := range fixedWidthPattern.FindAllStringSubmatch(css, -1) {
 		if width, err := strconv.ParseFloat(match[1], 64); err == nil && width >= fixedWidthPx {
 			return true
@@ -301,25 +305,19 @@ func textContent(node *html.Node) string {
 	return builder.String()
 }
 
-func unsafeURL(value string) bool {
-	normalized := strings.Map(func(r rune) rune {
+// stripURLSpace removes the code points browsers ignore inside URLs: everything
+// at or below 0x20 plus 0x7f. server/src/html-policy.ts does the same.
+func stripURLSpace(value string) string {
+	return strings.Map(func(r rune) rune {
 		if r <= 0x20 || r == 0x7f {
 			return -1
 		}
 		return r
-	}, strings.ToLower(value))
-	return strings.HasPrefix(normalized, "javascript:") || strings.HasPrefix(normalized, "vbscript:") || strings.HasPrefix(normalized, "file:")
+	}, value)
 }
 
-func unsafeCSS(value string) bool {
-	normalized := strings.ToLower(value)
-	compact := strings.Map(func(r rune) rune {
-		if r <= 0x20 {
-			return -1
-		}
-		return r
-	}, normalized)
-	return strings.Contains(compact, "behavior:") || strings.Contains(compact, "expression(") || strings.Contains(compact, "url(javascript:")
+func isFileURL(value string) bool {
+	return strings.HasPrefix(strings.ToLower(stripURLSpace(value)), "file:")
 }
 
 func externalHost(value string) string {
@@ -334,22 +332,26 @@ func externalHost(value string) string {
 	return strings.ToLower(parsed.Hostname())
 }
 
+var urlSchemePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+
+// isHTTPSURL reports whether a script src loads over https. "//host" counts.
+// The check is string based so it cannot disagree with the Worker's WHATWG URL parser.
 func isHTTPSURL(value string) bool {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "//") {
-		value = "https:" + value
+	value = strings.ToLower(stripURLSpace(value))
+	switch {
+	case strings.HasPrefix(value, "//"):
+		value = value[2:]
+	case strings.HasPrefix(value, "https:"):
+		value = value[len("https:"):]
+	default:
+		return false
 	}
-	parsed, err := url.Parse(value)
-	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
+	return strings.TrimLeft(value, "/") != ""
 }
 
 func isRelativeURL(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" || strings.HasPrefix(value, "//") || strings.Contains(value, `\`) {
-		return false
-	}
-	parsed, err := url.Parse(value)
-	return err == nil && parsed.Scheme == "" && parsed.Host == ""
+	value = stripURLSpace(value)
+	return value != "" && !strings.HasPrefix(value, "//") && !strings.Contains(value, `\`) && !urlSchemePattern.MatchString(value)
 }
 
 func truncateRunes(value string, limit int) string {

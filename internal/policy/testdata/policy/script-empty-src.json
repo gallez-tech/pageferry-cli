@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Scripts must load over https://; the draft CSP blocks other script sources."
+  ]
+}

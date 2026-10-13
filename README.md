@@ -119,8 +119,13 @@ honors `PAGEFERRY_VERSION`.
 PageFerry accepts complete HTML documents with inline CSS and scripts, HTTPS scripts and
 stylesheets, ES modules, forms, Alpine.js, HTMX, web fonts, and HTTPS browser requests.
 The CLI validates documents before upload and the server repeats validation at the trust
-boundary. Unsafe URL schemes, non-HTTPS external scripts, iframes, embeds, objects,
-applets, inline event-handler attributes, meta refresh, and unsafe CSS are rejected.
+boundary. Only content that cannot be stored or served is an error: invalid UTF-8, an
+empty or oversized document (512 KiB), a parse failure, or nesting deeper than 512 levels.
+Iframes, inline event handlers, `javascript:` URLs, and any script `type` are allowed;
+isolation comes from the per-draft origin and the draft CSP. Content that will silently not
+work for viewers is a warning: `<object>`, `<embed>`, `<applet>`, `<base>`, relative script
+paths in a single file, scripts not loaded over `https://`, `file:` URLs, and meta refresh.
+Mobile advisories (viewport, fixed widths, form font sizes, `100vh`, `lang`) are warnings too.
 
 Validate a document locally without an API key or network access:
 
@@ -218,8 +223,8 @@ pageferry validate .
 
 Hidden files and symbolic links are skipped (including dotfiles and symlinks; `404.html`,
 `_redirects`, and hashed assets under `assets/` are kept). HTML files in the bundle follow
-the same policy as single documents, except that scripts may load same-origin paths such as
-`/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files.
+the same errors and warnings as single documents, except that scripts may load same-origin
+paths such as `/assets/index-abc.js` without a warning. Bundles are limited to 50 MiB and 2000 files.
 
 For [Slidev](https://sli.dev) builds, `pageferry validate` and `pageferry upload` detect
 `slidev build` output (`meta property="slidev:version"`), check that every root-absolute script

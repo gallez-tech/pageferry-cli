@@ -40,7 +40,7 @@ Documents are public unless uploaded with `--password` or `--email`. Use a passw
 
 Never embed secrets or credentials in HTML. Pass backend-only values with repeatable `--secret NAME=value` and non-secret configuration with repeatable `--env NAME=value`; variable names must start with an uppercase letter and contain only uppercase letters, digits, and underscores. Pin dependency versions in CDN URLs and add Subresource Integrity (`integrity`) metadata when the CDN provides hashes; choose maintained versions appropriate to the document instead of relying on a floating latest release.
 
-PageFerry rejects iframes, embeds, objects, applets, non-HTTPS external scripts, event-handler attributes, unsafe URL schemes, meta refresh, and unsafe CSS. Browser requests and form actions must use HTTPS.
+PageFerry only rejects HTML that cannot be stored or served: invalid UTF-8, empty or oversized documents (512 KiB), parse failures, and nesting deeper than 512 levels. Iframes, inline event handlers, `javascript:` URLs, and any script `type` are allowed; the draft CSP and per-draft origin provide isolation. Content that silently will not work for viewers produces warnings instead: `<object>`/`<embed>`/`<applet>`, `<base>`, relative script paths in a single file, non-HTTPS script sources, `file:` URLs, and meta refresh. Mobile advisories (viewport, fixed widths, form font sizes, `100vh`, `lang`) are warnings too.
 
 If a general web-design or data-visualisation skill is available in this environment, use it for visual direction and chart construction. The PageFerry rules in this skill still apply and take precedence where they conflict.
 
@@ -110,7 +110,7 @@ pageferry upload <project-dir>/dist      # publishes an existing build
 pageferry validate <project-dir>         # checks dist/ offline
 ```
 
-Given a project directory without `index.html`, PageFerry uses its `dist/` folder. Hidden files are skipped. Every HTML file in the bundle follows the document policy above, except that scripts may use same-origin paths such as `/assets/index-abc.js`. Bundles are limited to 50 MiB and 2000 files.
+Given a project directory without `index.html`, PageFerry uses its `dist/` folder. Hidden files are skipped. Every HTML file in the bundle follows the document policy above (same errors and warnings), except that scripts may use same-origin paths such as `/assets/index-abc.js` without a warning. Bundles are limited to 50 MiB and 2000 files.
 
 Slidev-specific checks when `index.html` includes `meta property="slidev:version"`:
 

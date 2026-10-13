@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "CSS uses 100vh without an svh or dvh alternative; full-height elements overflow under the iOS Safari toolbar."
+  ]
+}

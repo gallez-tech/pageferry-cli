@@ -1,0 +1,7 @@
+{
+  "mode": "document",
+  "errors": [],
+  "warnings": [
+    "Viewport disables zooming (user-scalable=no or maximum-scale below 5); readers cannot zoom in."
+  ]
+}
