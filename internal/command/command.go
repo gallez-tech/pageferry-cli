@@ -69,6 +69,8 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return a.list(ctx, args[1:])
 	case "keys":
 		return a.keys(ctx, args[1:])
+	case "project", "projects":
+		return a.project(ctx, args[1:])
 	case "access":
 		return a.access(ctx, args[1:])
 	case "skill":
@@ -97,21 +99,29 @@ Usage:
   pageferry access <draft-id|file> [--public | --password <password> | --email <address>]
                  [--sign-out-readers] [--api-url <url>]
   pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>]
-                   [--build] [--description <text>] [--temporary <duration>]
+                   [--project <slug>] [--build] [--description <text>] [--temporary <duration>]
                    [--public | --password <password> | --email <address>]
                    [--env <NAME=value>] [--secret <NAME=value>]
                    [--workers-dev] [--api-url <url>]
   pageferry validate <file|directory> [--name <filename>]
-  pageferry list [--api-url <url>] [--json]
+  pageferry list [--pages | --assets] [--project <slug|none>] [--type <type>] [--json]
+                 [--api-url <url>]
+  pageferry project <list|create|edit|rename|delete|move> [arguments]
   pageferry skill install --agent <opencode|codex|claude|cursor|all>
                           [--local|--global] [--force]
                           (opencode/codex/cursor → .agents/skills; claude → .claude/skills)
   pageferry update check
   pageferry --version
 
-Direct files:
-  PDF, image, audio, and video files are uploaded as one public file. Common
-  formats include PDF, PNG/JPEG/WebP, MP3/WAV, and MP4/WebM.
+Pages and assets:
+  HTML documents and static sites are pages. PDF, image, audio, and video files
+  are assets: uploaded as one file with a stable URL a page can reference.
+  Common formats include PDF, PNG/JPEG/WebP, MP3/WAV, and MP4/WebM.
+
+Projects:
+  A project groups related pages and assets. Create one with
+  "pageferry project create <name>" and publish into it with --project <slug>.
+  Without --project, uploads from a git repository join that repository's project.
 
 Static sites:
   Pass a build output directory (with index.html at its root) to publish every
@@ -355,7 +365,7 @@ func (a *App) upload(ctx context.Context, args []string) error {
 		fmt.Fprintln(a.out, "Usage: pageferry upload <file|directory> [--draft <id>] [--new] [--name <filename>] [--alt-text <text>] [--transcript-file <path>] [--preview-title <text>] [--preview-description <text>] [--preview-image <url|bundle-path>] [--preview-image-alt <text>] [--canonical-url <url>] [--site-name <text>] [--preview-type <type>] [--twitter-card <type>] [--twitter-site <handle>] [--twitter-creator <handle>] [--preview-meta <og:key=value>] [--build] [--description <text>] [--temporary <duration>] [--public | --password <password> | --email <address>] [--env <NAME=value>] [--secret <NAME=value>] [--workers-dev] [--api-url <url>]")
 		return nil
 	}
-	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "alt-text": true, "transcript-file": true, "preview-title": true, "preview-description": true, "preview-image": true, "preview-image-alt": true, "canonical-url": true, "site-name": true, "preview-type": true, "twitter-card": true, "twitter-site": true, "twitter-creator": true, "preview-meta": true, "description": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false, "build": false}
+	spec := map[string]bool{"api-url": true, "draft": true, "new": false, "name": true, "alt-text": true, "transcript-file": true, "preview-title": true, "preview-description": true, "preview-image": true, "preview-image-alt": true, "canonical-url": true, "site-name": true, "preview-type": true, "twitter-card": true, "twitter-site": true, "twitter-creator": true, "preview-meta": true, "description": true, "project": true, "temporary": true, "public": false, "password": true, "email": true, "env": true, "secret": true, "workers-dev": false, "build": false}
 	options, positional, err := parseOptions(args, spec)
 	if err != nil {
 		return err
@@ -509,6 +519,13 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if description, supplied := options["description"]; supplied {
 		request.Description = &description
 	}
+	if project, supplied := options["project"]; supplied {
+		project = strings.ToLower(strings.TrimSpace(project))
+		if project == "" {
+			return errors.New("--project requires a project slug")
+		}
+		request.Project = project
+	}
 	if raw := options["temporary"]; raw != "" {
 		seconds, err := parseDuration(raw)
 		if err != nil {
@@ -557,7 +574,18 @@ func (a *App) upload(ctx context.Context, args []string) error {
 	if response.VersionNumber > 1 || draftID != "" {
 		action = "Updated"
 	}
-	fmt.Fprintf(a.out, "%s draft %s (version %d)\nPublic URL: %s\n", action, response.DraftID, response.VersionNumber, response.PublicURL)
+	noun := "page"
+	if response.Group == "asset" {
+		noun = "asset"
+	}
+	fmt.Fprintf(a.out, "%s %s %s (version %d)\nPublic URL: %s\n", action, noun, response.DraftID, response.VersionNumber, response.PublicURL)
+	if response.ProjectSlug != "" {
+		created := ""
+		if response.ProjectCreated {
+			created = " (created)"
+		}
+		fmt.Fprintf(a.out, "Project: %s%s\n", response.ProjectSlug, created)
+	}
 	if response.ContentKind == "site" {
 		fmt.Fprintf(a.out, "Files: %d\n", response.FileCount)
 	} else {
@@ -678,25 +706,50 @@ func humanBytes(size int64) string {
 	}
 }
 
+const listUsage = "pageferry list [--pages | --assets] [--project <slug|none>] [--type <type>] [--json] [--api-url <url>]"
+
 func (a *App) list(ctx context.Context, args []string) error {
 	if len(args) == 1 && isHelp(args[0]) {
-		fmt.Fprintln(a.out, "Usage: pageferry list [--api-url <url>] [--json]")
+		fmt.Fprintln(a.out, "Usage: "+listUsage)
+		fmt.Fprintln(a.out, "Types: html, site (pages); image, video, audio, pdf, file (assets). --project none lists items without a project.")
 		return nil
 	}
-	options, positional, err := parseOptions(args, map[string]bool{"api-url": true, "json": false})
+	options, positional, err := parseOptions(args, map[string]bool{"api-url": true, "json": false, "pages": false, "assets": false, "project": true, "type": true})
 	if err != nil {
 		return err
 	}
 	if len(positional) != 0 {
-		return errors.New("usage: pageferry list [--api-url <url>] [--json]")
+		return errors.New("usage: " + listUsage)
 	}
+	_, pagesOnly := options["pages"]
+	_, assetsOnly := options["assets"]
+	if pagesOnly && assetsOnly {
+		return errors.New("--pages and --assets cannot be used together")
+	}
+	project := strings.ToLower(strings.TrimSpace(options["project"]))
+	itemType := strings.ToLower(strings.TrimSpace(options["type"]))
 	client, err := a.authenticatedClient(options["api-url"])
 	if err != nil {
 		return err
 	}
-	drafts, err := client.Drafts(ctx)
+	all, err := client.Drafts(ctx)
 	if err != nil {
 		return err
+	}
+	drafts := make([]api.Draft, 0, len(all))
+	for _, draft := range all {
+		group := draftGroup(draft)
+		slug := ""
+		if draft.ProjectSlug != nil {
+			slug = *draft.ProjectSlug
+		}
+		switch {
+		case pagesOnly && group != "page", assetsOnly && group != "asset":
+		case project == "none" && slug != "", project != "" && project != "none" && slug != project:
+		case itemType != "" && draftType(draft) != itemType:
+		default:
+			drafts = append(drafts, draft)
+		}
 	}
 	if _, jsonOutput := options["json"]; jsonOutput {
 		encoded, err := json.MarshalIndent(drafts, "", "  ")
@@ -707,25 +760,31 @@ func (a *App) list(ctx context.Context, args []string) error {
 		return nil
 	}
 	if len(drafts) == 0 {
-		fmt.Fprintln(a.out, "No drafts yet. Publish one with: pageferry upload <file>")
+		if len(all) == 0 {
+			fmt.Fprintln(a.out, "Nothing published yet. Publish a page or asset with: pageferry upload <file>")
+		} else {
+			fmt.Fprintln(a.out, "No page or asset matches these filters.")
+		}
 		return nil
 	}
 	for index, draft := range drafts {
 		if index > 0 {
 			fmt.Fprintln(a.out)
 		}
-		repository := "no repo"
-		if draft.RepoOrg != nil && draft.RepoName != nil {
-			repository = *draft.RepoOrg + "/" + *draft.RepoName
+		location := "no project"
+		if draft.ProjectName != nil && *draft.ProjectName != "" {
+			location = *draft.ProjectName
+		} else if draft.ProjectSlug != nil {
+			location = *draft.ProjectSlug
 		}
 		version := "-"
 		if draft.LatestVersionNumber != nil {
 			version = strconv.Itoa(*draft.LatestVersionNumber)
 		}
 		updated := relativeTime(draft.UpdatedAt, a.now())
-		states := []string{draft.HostingMode}
-		if draft.ContentKind == "site" {
-			states = append(states, "site")
+		states := []string{draftType(draft)}
+		if draft.AccessMode != "" && draft.AccessMode != "public" {
+			states = append(states, draft.AccessMode+" access")
 		}
 		if draft.ExpiresAt == nil {
 			states = append(states, "permanent")
@@ -741,12 +800,44 @@ func (a *App) list(ctx context.Context, args []string) error {
 		if draft.Disabled {
 			states = append(states, "disabled")
 		}
-		fmt.Fprintf(a.out, "%s — %s\n  %s · v%s · %d versions · updated %s · %s\n  %s\n", draft.Title, repository, draft.DraftID, version, draft.VersionCount, updated, strings.Join(states, " · "), draft.PublicURL)
+		details := []string{draft.DraftID, "v" + version}
+		if draft.VersionCount > 1 {
+			details = append(details, fmt.Sprintf("%d versions", draft.VersionCount))
+		}
+		if draft.SizeBytes != nil {
+			details = append(details, humanBytes(*draft.SizeBytes))
+		}
+		if draft.SubmissionCount > 0 {
+			details = append(details, plural(draft.SubmissionCount, "submission"))
+		}
+		details = append(details, "updated "+updated)
+		fmt.Fprintf(a.out, "%s — %s\n  %s\n  %s\n  %s\n", draft.Title, location, strings.Join(details, " · "), strings.Join(states, " · "), draft.PublicURL)
 		if draft.Description != nil && *draft.Description != "" {
 			fmt.Fprintf(a.out, "  %s\n", *draft.Description)
 		}
 	}
 	return nil
+}
+
+// draftGroup falls back to the content kind for servers that predate pages and assets.
+func draftGroup(draft api.Draft) string {
+	if draft.Group != "" {
+		return draft.Group
+	}
+	if draft.ContentKind == "file" {
+		return "asset"
+	}
+	return "page"
+}
+
+func draftType(draft api.Draft) string {
+	if draft.Type != "" {
+		return draft.Type
+	}
+	if draft.ContentKind != "" {
+		return draft.ContentKind
+	}
+	return "html"
 }
 
 func (a *App) skill(args []string) error {

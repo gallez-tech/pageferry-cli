@@ -46,6 +46,16 @@ func Collect(ctx context.Context, filePath, version, hash string) map[string]any
 	return metadata
 }
 
+// Repository returns the origin remote of the git repository containing
+// directory, or empty values when there is none.
+func Repository(ctx context.Context, directory string) (host, org, repo string) {
+	root := git(ctx, directory, "rev-parse", "--show-toplevel")
+	if root == "" {
+		return "", "", ""
+	}
+	return parseRemote(git(ctx, root, "config", "--get", "remote.origin.url"))
+}
+
 func git(ctx context.Context, directory string, args ...string) string {
 	output, err := runGit(ctx, directory, args...)
 	if err != nil {

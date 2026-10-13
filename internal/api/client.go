@@ -45,6 +45,8 @@ type UploadRequest struct {
 	Access           *UploadAccess        `json:"access,omitempty"`
 	Env              map[string]string    `json:"env,omitempty"`
 	Secrets          map[string]string    `json:"secrets,omitempty"`
+	// Project is a project slug; the server creates it on first use.
+	Project string `json:"project,omitempty"`
 }
 
 type LinkPreviewMetadata struct {
@@ -95,7 +97,11 @@ type UploadResponse struct {
 	Warnings      []string `json:"warnings"`
 	AccessMode    string   `json:"accessMode"`
 	ContentKind   string   `json:"contentKind"`
-	FileCount     int      `json:"fileCount"`
+	// Group is "page" for HTML and site builds, "asset" for uploaded files.
+	Group          string `json:"group"`
+	ProjectSlug    string `json:"projectSlug"`
+	ProjectCreated bool   `json:"projectCreated"`
+	FileCount      int    `json:"fileCount"`
 }
 
 // SiteFile is a bundle file to stream in a site upload.
@@ -124,6 +130,36 @@ type Draft struct {
 	RawURL              string  `json:"rawUrl"`
 	AccessMode          string  `json:"accessMode"`
 	ContentKind         string  `json:"contentKind"`
+	Group               string  `json:"group"`
+	Type                string  `json:"type"`
+	SizeBytes           *int64  `json:"sizeBytes"`
+	SubmissionCount     int     `json:"submissionCount"`
+	ProjectSlug         *string `json:"projectSlug"`
+	ProjectName         *string `json:"projectName"`
+}
+
+// Project groups pages and assets, optionally tied to a git repository.
+type Project struct {
+	ID          string  `json:"id"`
+	Slug        string  `json:"slug"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	RepoHost    *string `json:"repoHost"`
+	RepoOrg     *string `json:"repoOrg"`
+	RepoName    *string `json:"repoName"`
+	RepoURL     *string `json:"repoUrl"`
+	PageCount   int     `json:"pageCount"`
+	AssetCount  int     `json:"assetCount"`
+	UpdatedAt   string  `json:"updatedAt"`
+}
+
+// ProjectRequest creates or edits a project. Nil fields are omitted, so an edit
+// keeps them; a pointer to an empty string clears the description or repository.
+type ProjectRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Slug        *string `json:"slug,omitempty"`
+	Repo        *string `json:"repo,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 type APIError struct {
@@ -270,6 +306,45 @@ func (c *Client) Drafts(ctx context.Context) ([]Draft, error) {
 	}
 	err := c.do(ctx, http.MethodGet, "/api/drafts", nil, &response)
 	return response.Drafts, err
+}
+
+func (c *Client) Projects(ctx context.Context) ([]Project, error) {
+	var response struct {
+		Projects []Project `json:"projects"`
+	}
+	err := c.do(ctx, http.MethodGet, "/api/projects", nil, &response)
+	return response.Projects, err
+}
+
+func (c *Client) CreateProject(ctx context.Context, request ProjectRequest) (Project, error) {
+	var response struct {
+		Project Project `json:"project"`
+	}
+	err := c.do(ctx, http.MethodPost, "/api/projects", request, &response)
+	return response.Project, err
+}
+
+func (c *Client) UpdateProject(ctx context.Context, slug string, request ProjectRequest) (Project, error) {
+	var response struct {
+		Project Project `json:"project"`
+	}
+	err := c.do(ctx, http.MethodPatch, "/api/projects/"+url.PathEscape(slug), request, &response)
+	return response.Project, err
+}
+
+func (c *Client) DeleteProject(ctx context.Context, slug string) error {
+	var response struct{}
+	return c.do(ctx, http.MethodDelete, "/api/projects/"+url.PathEscape(slug), nil, &response)
+}
+
+// MoveDraft puts a page or asset in a project; an empty slug removes it from its project.
+func (c *Client) MoveDraft(ctx context.Context, draftID, slug string) error {
+	var project any
+	if slug != "" {
+		project = slug
+	}
+	var response struct{}
+	return c.do(ctx, http.MethodPost, "/api/drafts/"+url.PathEscape(draftID)+"/project", map[string]any{"project": project}, &response)
 }
 
 type APIKey struct {

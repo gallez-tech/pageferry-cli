@@ -77,6 +77,28 @@ Return the public URL printed by the command. Reusing the same local path update
 
 Use `--description <text>` when a dashboard summary is useful. Use `--temporary <duration>` for an expiring draft; accepted durations range from `5m` through `30d`. Dedicated `--workers-dev` hosting is not available yet, so do not select it.
 
+## Organise pages and assets into projects
+
+PageFerry separates **pages** (HTML documents and static site builds) from **assets**
+(PDF, image, audio, and video files that are too large to inline in a page and keep a
+stable URL a page can reference). A **project** groups related pages and assets, with or
+without a git repository, for example one organisation's contest, website, and sysadmin
+notes.
+
+```sh
+pageferry project create "Concours" --slug cdg57-concours --repo cdg57/concours
+pageferry upload plan.html --project cdg57-concours   # unknown slugs are created
+pageferry project move <draft-id|file> cdg57-concours  # or --none to unassign
+pageferry list --pages --project cdg57-concours
+pageferry list --assets --type pdf
+pageferry project list
+```
+
+Without `--project`, an upload from a git repository joins that repository's project (created on
+first use), and an existing page or asset keeps its project. `pageferry project edit|rename|delete`
+manage projects; deleting one keeps its pages and assets. The same projects are managed online
+in the dashboard.
+
 ## Publish one PDF, image, audio, or video file
 
 PageFerry creates a share page with media playback and sharing actions, while

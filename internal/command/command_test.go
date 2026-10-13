@@ -76,7 +76,7 @@ func TestUploadCreatesThenUsesSavedMapping(t *testing.T) {
 	if requests[0].Metadata["cliVersion"] != "test-version" || requests[0].Metadata["contentSha256"] == "" {
 		t.Fatalf("metadata = %#v", requests[0].Metadata)
 	}
-	if !strings.Contains(out.String(), "Uploaded draft") || !strings.Contains(out.String(), "Updated draft") {
+	if !strings.Contains(out.String(), "Uploaded page") || !strings.Contains(out.String(), "Updated page") {
 		t.Fatalf("output = %q", out.String())
 	}
 }

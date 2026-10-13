@@ -114,6 +114,30 @@ The PowerShell installer supports Windows amd64 and arm64, verifies the MSI chec
 and requests elevation because the MSI installs PageFerry for the whole machine. It also
 honors `PAGEFERRY_VERSION`.
 
+## Pages, assets, and projects
+
+The dashboard separates **pages** (HTML documents and static site builds) from **assets**
+(PDF, image, audio, and video files too large to inline in a page, each with a stable URL a
+page can reference). **Projects** group related pages and assets, with or without a git
+repository, and can be created and managed from the CLI or online.
+
+```sh
+pageferry project create "Concours" --slug cdg57-concours --repo cdg57/concours
+pageferry project create "Site internet" --from-git        # repository of the current directory
+pageferry upload plan.html --project cdg57-concours        # unknown slugs are created
+pageferry project move report.html cdg57-concours          # or --none to unassign
+pageferry project edit cdg57-concours --name "Concours 2026" --description "Annual contest"
+pageferry project rename cdg57-concours "Concours"
+pageferry project delete old-project                        # keeps its pages and assets
+pageferry project list [--json]
+pageferry list --pages --project cdg57-concours
+pageferry list --assets --type pdf                          # html, site, image, video, audio, pdf
+```
+
+Without `--project`, an upload from a git repository joins that repository's project (created
+on first use), and an existing page or asset keeps its project. Requires a server that
+supports projects.
+
 ## Interactive documents
 
 PageFerry accepts complete HTML documents with inline CSS and scripts, HTTPS scripts and
